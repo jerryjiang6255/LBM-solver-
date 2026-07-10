@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<!-- ============================================================
+     index.html (V2)
+     ------------------------------------------------------------
+     Wires lbm.js, geometry.js, turbulence.js, collision.js,
+     streaming.js, boundary.js, render.js together and runs the
+     per-frame workflow from the physics doc:
+
+
+       computeMacros
+       -> computeEquilibriumAndNonEquilibrium
+       -> computeStrainRate
+       -> computeSmagorinskyViscosity
+       -> applyWallModel
+       -> collideMRT
+       -> stream (fluid-fluid + BFL)
+       -> applyBoundaryConditions (walls, Zou-He inlet/outlet)
+       -> draw
+
+
+     Geometry (cylinder mask, wall distance, BFL links) is built
+     ONCE at startup/reset, since V2's obstacle is fixed for now —
+     only flow parameters (inlet velocity, Reynolds number,
+     outlet density) are live-tunable, same interaction model as
+     V1's slider HUD.
+     ============================================================ -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>V2 LBM Flow Visualizer</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <h1>Lattice Boltzmann Flow Visualizer <span class="tag">V2</span></h1>
+      <p class="subtitle">
+        D2Q9 · MRT collision · Smagorinsky LES · log-law wall model · BFL boundary
+      </p>
+    </header>
+
+
+    <main class="app-main">
+      <canvas id="flow-canvas"></canvas>
+
+
+      <aside class="hud">
+        <h2>Inlet Flow</h2>
+
+
+        <label class="control">
+          <span>Inlet velocity (u0)</span>
+          <input type="range" id="u0-slider" min="0.02" max="0.4" step="0.005" value="0.2" />
+          <output id="u0-value">0.20</output>
+        </label>
+
+
+        <label class="control">
+          <span>Outlet density (rhoOut)</span>
+          <input type="range" id="rho-slider" min="0.98" max="1.02" step="0.001" value="1.000" />
+          <output id="rho-value">1.000</output>
+        </label>
+
+
+        <label class="control">
+          <span>Reynolds number (Re)</span>
+          <input type="range" id="re-slider" min="20" max="2000" step="10" value="200" />
+          <output id="re-value">200</output>
+        </label>
+
+
+        <h2>Display</h2>
+
+
+        <label class="control">
+          <span>Field</span>
+          <select id="mode-select">
+            <option value="speed">Speed</option>
+            <option value="strain">Strain rate</option>
+          </select>
+        </label>
+
+
+        <label class="control">
+          <span>Colormap scale</span>
+          <input type="range" id="scale-slider" min="0.02" max="1.0" step="0.005" value="0.4" />
+          <output id="scale-value">0.4</output>
+        </label>
+
+
+        <label class="control">
+          <span>Sim speed (steps/frame)</span>
+          <input type="range" id="steps-slider" min="1" max="20" step="1" value="10" />
+          <output id="steps-value">10</output>
+        </label>
+
+
+        <div class="buttons">
+          <button id="pause-btn" type="button">Pause</button>
+          <button id="reset-btn" type="button">Reset</button>
+        </div>
+
+
+        <div class="stats">
+          <div><span>FPS</span><output id="fps-value">--</output></div>
+          <div><span>Frame</span><output id="frame-value">0</output></div>
+        </div>
+
+
+        <p id="app-error" class="error" role="alert"></p>
+
+
+        <p class="hint">
+          Blue = low, red = high. Gray disk = cylinder. Raising Re
+          too far or u0 too high can destabilize MRT — reduce u0
+          first if the field goes blank/NaN.
+        </p>
+      </aside>
+    </main>
+  </div>
+
+
+  <script>
+    // Global error trap: surfaces module-load / runtime errors as
+    // visible text, since a thrown error inside an ES module can
+    // otherwise leave the canvas silently blank with no obvious
+    // console signal in some browsers.
+    const errEl = () => document.getElementById('app-error');
+    window.addEventListener('error', (e) => {
+      errEl().textContent = 'Error: ' + (e.message || e.error) +
+        (e.filename ? ` (${e.filename}:${e.lineno})` : '');
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      errEl().textContent = 'Unhandled promise rejection: ' + (e.reason?.message || e.reason);
+    });
+  </script>
+
+
+  <script type="module">
+    import {
+      NX, NY, f, rho, ux, uy,
+      initField, 
+      setReynolds,
+    } from "./src/lbm.js";
+    import {
+      buildCylinder, buildSolidList,
+    } from "./src/geometry.js";
+    import { stream } from "./src/streaming.js";
+    import { applyBoundaryConditions } from "./src/boundary.js";
+    import { Renderer } from "./src/render.js";
+    import { collideFused } from "./src/collisionFused.js"; // add
+
+
+
+    // ---------------------------------------------------------
+    // GEOMETRY (built once; fixed cylinder for V2)
+    // ---------------------------------------------------------
+    // cx, cy, radius : same default placement as V1 (centered
+    // vertically, quarter of the way in from the left).
+    // solid, dist    : from buildCylinder — solid mask + signed
+    //                  distance to the circle boundary.
+    // wallDist       : per-node wall distance, feeds the wall model.
+    // wallAdjacent   : which fluid cells actually run the wall model.
+    // linkMask/linkQ : BFL link metadata, feeds streaming.js.
+    const cx = Math.floor(NX / 4);
+    const cy = Math.floor(NY / 2);
+    const radius = Math.max(4, Math.floor(NY / 8));
+
+
+    let solid, dist, wallDist, wallAdjacent, solidList;
+
+
+    function buildGeometry() {
+      const g = buildCylinder(cx, cy, radius);
+
+      solid = g.solid;
+      dist = g.dist;
+      solidList = buildSolidList(solid);   // <-- add this
+    }
+
+
+    // ---------------------------------------------------------
+    // SIMULATION STATE
+    // ---------------------------------------------------------
+    let u0 = parseFloat(document.getElementById("u0-slider").value);
+    let rhoOut = parseFloat(document.getElementById("rho-slider").value);
+    let reynolds = parseFloat(document.getElementById("re-slider").value);
+    let displayMode = document.getElementById("mode-select").value;
+    let colorScale = parseFloat(document.getElementById("scale-slider").value);
+    let stepsPerFrame = parseInt(document.getElementById("steps-slider").value, 10);
+    let running = true;
+    let frameCount = 0;
+
+
+    // ---------------------------------------------------------
+    // resetSim()
+    // ---------------------------------------------------------
+    // Rebuilds geometry (fixed shape, but recomputed for
+    // consistency), applies the current Reynolds number (which
+    // derives NU0/TAU0 in lbm.js from the cylinder's diameter),
+    // and reinitializes the field to equilibrium at u0.
+    function resetSim() {
+      buildGeometry();
+      setReynolds(reynolds);
+      initField(u0, solid);
+      frameCount = 0;
+      applyBoundaryConditions(u0, solid);
+
+    }
+
+
+    const canvas = document.getElementById("flow-canvas");
+    const renderer = new Renderer(canvas, cx, cy, radius);
+
+
+    resetSim();
+
+
+    // ---------------------------------------------------------
+    // UI WIRING
+    // ---------------------------------------------------------
+    const u0Slider = document.getElementById("u0-slider");
+    const u0Value = document.getElementById("u0-value");
+    u0Slider.addEventListener("input", () => {
+      u0 = parseFloat(u0Slider.value);
+      u0Value.textContent = u0.toFixed(3);
+    });
+
+
+    const rhoSlider = document.getElementById("rho-slider");
+    const rhoValue = document.getElementById("rho-value");
+    rhoSlider.addEventListener("input", () => {
+      rhoOut = parseFloat(rhoSlider.value);
+      rhoValue.textContent = rhoOut.toFixed(3);
+    });
+
+
+    const reSlider = document.getElementById("re-slider");
+    const reValue = document.getElementById("re-value");
+    reSlider.addEventListener("input", () => {
+      reynolds = parseFloat(reSlider.value);
+      reValue.textContent = reynolds.toFixed(0);
+      setReynolds(reynolds); // live update: changes NU0/TAU0 immediately
+    });
+
+
+    const modeSelect = document.getElementById("mode-select");
+    modeSelect.addEventListener("change", () => {
+      displayMode = modeSelect.value;
+    });
+
+
+    const scaleSlider = document.getElementById("scale-slider");
+    const scaleValue = document.getElementById("scale-value");
+    scaleSlider.addEventListener("input", () => {
+      colorScale = parseFloat(scaleSlider.value);
+      scaleValue.textContent = colorScale.toFixed(3);
+    });
+
+
+    const stepsSlider = document.getElementById("steps-slider");
+    const stepsValue = document.getElementById("steps-value");
+    stepsSlider.addEventListener("input", () => {
+      stepsPerFrame = parseInt(stepsSlider.value, 10);
+      stepsValue.textContent = stepsSlider.value;
+    });
+
+
+    const pauseBtn = document.getElementById("pause-btn");
+    pauseBtn.addEventListener("click", () => {
+      running = !running;
+      pauseBtn.textContent = running ? "Pause" : "Resume";
+    });
+
+
+    const resetBtn = document.getElementById("reset-btn");
+    resetBtn.addEventListener("click", resetSim);
+
+
+    const fpsValue = document.getElementById("fps-value");
+    const frameValue = document.getElementById("frame-value");
+
+
+    // ---------------------------------------------------------
+    // FRAME LOOP
+    // ---------------------------------------------------------
+    // One call to stepOnce() runs the full physics workflow from
+    // the doc, in order. tick() runs stepOnce() stepsPerFrame
+    // times per rendered frame (same "decouple physics rate from
+    // render rate" pattern discussed for V1), then draws once.
+    // function stepOnce() {
+
+    function stepOnce() {
+      collideFused(solid, u0);
+      stream(solid, solidList);
+      applyBoundaryConditions(u0, solid);
+      frameCount++;
+    }
+
+
+    let lastTime = performance.now();
+    let smoothedFps = 60;
+    const fpsSmoothing = 0.9;
+
+
+    function tick(now) {
+      const dt = now - lastTime;
+      lastTime = now;
+      const instFps = dt > 0 ? 1000 / dt : 60;
+      smoothedFps = fpsSmoothing * smoothedFps + (1 - fpsSmoothing) * instFps;
+
+
+      if (running) {
+        for (let s = 0; s < stepsPerFrame; s++) stepOnce();
+      }
+
+
+      renderer.draw(
+        { ux, uy },
+        solid,
+        { mode: displayMode, scale: colorScale }
+      );
+
+
+      fpsValue.textContent = smoothedFps.toFixed(0);
+      frameValue.textContent = frameCount.toString();
+
+
+      requestAnimationFrame(tick);
+    }
+
+
+    requestAnimationFrame(tick);
+  </script>
+</body>
+</html>
+

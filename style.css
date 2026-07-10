@@ -1,0 +1,245 @@
+/* ============================================================
+   style.css (V2)
+   ------------------------------------------------------------
+   Same layout/HUD system as V1 — this file is intentionally
+   almost unchanged, since the physics upgrade doesn't change
+   what the UI needs to look like. Only addition: styling for
+   the new <select> (display-mode dropdown) to match the range
+   sliders' visual language.
+   ============================================================ */
+
+:root {
+  --bg: #0f1216;
+  --panel: #171b21;
+  --panel-border: #2a2f38;
+  --text: #e6e9ef;
+  --text-dim: #9aa3b2;
+  --accent: #4fb3ff;
+  --accent-hover: #74c4ff;
+  --danger: #ff6b6b;
+  --radius: 8px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.app {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+}
+
+/* ---------------------------------------------------------
+   Header
+   --------------------------------------------------------- */
+.app-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.app-header .tag {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  background: var(--accent);
+  color: #061018;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.app-header .subtitle {
+  margin: 6px 0 24px;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+/* ---------------------------------------------------------
+   Main layout
+   --------------------------------------------------------- */
+.app-main {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+#flow-canvas {
+  width: 100%;
+  max-width: 768px;
+  height: auto;
+  aspect-ratio: 256 / 128;
+  background: #000;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* ---------------------------------------------------------
+   HUD / controls sidebar
+   --------------------------------------------------------- */
+.hud {
+  flex: 1 1 260px;
+  min-width: 240px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.hud h2 {
+  margin: 18px 0 12px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.hud h2:first-child {
+  margin-top: 0;
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+  font-size: 0.85rem;
+}
+
+.control span {
+  color: var(--text-dim);
+}
+
+.control input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.control output {
+  align-self: flex-end;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+/* Display-mode dropdown, styled to match the sliders' dark
+   theme rather than falling back to the browser's default
+   light-themed <select> appearance. */
+.control select {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.control select:focus {
+  outline: 1px solid var(--accent);
+}
+
+.buttons {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.buttons button {
+  flex: 1;
+  padding: 8px 10px;
+  background: var(--accent);
+  color: #061018;
+  border: none;
+  border-radius: var(--radius);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.buttons button:hover {
+  background: var(--accent-hover);
+}
+
+#reset-btn {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+}
+
+#reset-btn:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: transparent;
+}
+
+/* ---------------------------------------------------------
+   Stats row
+   --------------------------------------------------------- */
+.stats {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid var(--panel-border);
+  padding-top: 10px;
+  margin-bottom: 10px;
+  font-size: 0.8rem;
+}
+
+.stats div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text-dim);
+}
+
+.stats output {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------
+   Error text (populated by index.html's global error trap)
+   --------------------------------------------------------- */
+.error {
+  margin: 0 0 10px;
+  min-height: 18px;
+  color: var(--danger);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.hint {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  line-height: 1.4;
+  margin: 0;
+}
+
+/* ---------------------------------------------------------
+   Responsive
+   --------------------------------------------------------- */
+@media (max-width: 720px) {
+  .app-main {
+    flex-direction: column;
+  }
+  .hud {
+    width: 100%;
+  }
+}
