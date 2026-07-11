@@ -19,9 +19,10 @@ const fSnapshot = new Float32Array(Q * N);
 // stream(solid, solidList, linkMask, linkQ)
 // ---------------------------------------------------------
 // add fluidSurfaceList to the stream() signature
-export function stream(solid, solidList, linkMask, linkQ, fluidSurfaceList) {
+export function stream(solid, solidList, linkMask, linkQ, fluidSurfaceList, paintedNodes) {
   streamInPlace();
   applyBFL(linkMask, linkQ, fluidSurfaceList);
+  bounceBackNodes(paintedNodes);
 }
 // ---------------------------------------------------------
 // streamInPlace()
@@ -122,5 +123,16 @@ function applyBFL(linkMask, linkQ, fluidSurfaceList) {
         f[off] = inv2q * fOppHere + (1.0 - inv2q) * fOppAhead;
       }
     }
+  }
+}
+
+function bounceBackNodes(paintedNodes) {
+  for (const n of paintedNodes) {
+    const base = n * Q;
+    let tmp;
+    tmp = f[base+1]; f[base+1] = f[base+3]; f[base+3] = tmp;
+    tmp = f[base+2]; f[base+2] = f[base+4]; f[base+4] = tmp;
+    tmp = f[base+5]; f[base+5] = f[base+7]; f[base+7] = tmp;
+    tmp = f[base+6]; f[base+6] = f[base+8]; f[base+8] = tmp;
   }
 }

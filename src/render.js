@@ -55,6 +55,7 @@ const STOPS = [
   [255, 20,  0  ],
 ];
 const COLORMAP = buildColormap(COLORMAP_STEPS);
+const drawnOverlay = new Uint8Array(N);
 
 function cubicHermite(a, b, c, d, t) {
   const t2 = t * t, t3 = t2 * t;
@@ -136,7 +137,7 @@ export function Renderer(displayCanvas) {
 //   scale     : normalisation constant  (ignored if autoScale)
 //   autoScale : bool — compute scale from field each frame
 // }
-Renderer.prototype.draw = function (fields, solid, rho, options) {
+Renderer.prototype.draw = function (fields, solid, rho, options, paintedNodes) {
   const mode      = (options && options.mode)      || 'speed';
   const autoScale = (options && options.autoScale) || false;
   let   scale     = (options && options.scale)     || 0.2;
@@ -154,14 +155,13 @@ Renderer.prototype.draw = function (fields, solid, rho, options) {
       const x = n % NX, y = (n / NX) | 0;
       if (x > 0 && x < NX-1 && y > 0 && y < NY-1) {
         const curl = (uyS[n+1] - uyS[n-1]) - (uxS[n+NX] - uxS[n-NX]);
-        scalarField[n] = curl;   // signed — centred at 0
+        scalarField[n] = curl;
       } else {
         scalarField[n] = 0;
       }
     } else if (mode === 'press') {
-      // Cp = (rho-1)/3 / (0.5*u0^2), normalise to [-1,1] then [0,1]
       const cp = (rho[n] - 1.0) / 3.0;
-      scalarField[n] = cp;       // signed
+      scalarField[n] = cp;
     } else {
       scalarField[n] = Math.sqrt(ux[n]*ux[n] + uy[n]*uy[n]);
     }
@@ -173,7 +173,7 @@ Renderer.prototype.draw = function (fields, solid, rho, options) {
   // ---- 4. Two passes of [1,2,1]/4 scalar blur ----
   blurField(scalarField, scalarTmp, solid, 2);
 
-  // ---- 5. Auto-scale: EMA of 98th-percentile speed ----
+  // ---- 5. Auto-scale ----
   if (autoScale && mode === 'speed') {
     let frameMax = 0;
     for (let n = 0; n < N; n++) {
@@ -184,20 +184,17 @@ Renderer.prototype.draw = function (fields, solid, rho, options) {
   }
 
   // ---- 6. Map scalar → pixels ----
-  // Vorticity and pressure are signed [-range, +range] → remap to [0,1]
-  const isSigned = (mode === 'vort' || mode === 'press');
-  // auto-range for signed modes: use fixed display gains matching reference
-  const vortGain  = 15;   // reference uses 15/u0; approximate with fixed 15
+  const vortGain  = 15;
   const pressGain = 0.55;
   const invScale  = 1 / scale;
 
   for (let n = 0; n < N; n++) {
     const p = n * 4;
-    if (solid[n]) {
+
+    if (solid[n] && !(paintedNodes && paintedNodes.has(n))) {
       d[p] = SOLID_R; d[p+1] = SOLID_G; d[p+2] = SOLID_B; d[p+3] = 255;
       continue;
     }
-
     let t;
     if (mode === 'vort') {
       t = scalarField[n] * vortGain;
@@ -211,7 +208,7 @@ Renderer.prototype.draw = function (fields, solid, rho, options) {
     }
 
     const step = (t * (COLORMAP_STEPS - 1)) | 0;
-    const c = step * 3;
+    const c    = step * 3;
     d[p] = COLORMAP[c]; d[p+1] = COLORMAP[c+1]; d[p+2] = COLORMAP[c+2]; d[p+3] = 255;
   }
 
@@ -221,9 +218,10 @@ Renderer.prototype.draw = function (fields, solid, rho, options) {
   this.ctx.imageSmoothingQuality = 'high';
   this.ctx.drawImage(this.buf, 0, 0, this.W, this.H);
 
-  // ---- 8. Draw body outline on top ----
-  drawBodyOutline(this.ctx, solid, this.W / NX, this.H / NY);
 };
+
+
+
 
 // ---------------------------------------------------------
 // smoothVelocity(ux, uy, solid, passes)
@@ -268,10 +266,14 @@ function fillSolids(field, solid) {
       const n = y * NX + x;
       if (!solid[n]) continue;
       let sum = 0, cnt = 0;
-      if (!solid[n-1])  { sum += field[n-1];  cnt++; }
-      if (!solid[n+1])  { sum += field[n+1];  cnt++; }
-      if (!solid[n-NX]) { sum += field[n-NX]; cnt++; }
-      if (!solid[n+NX]) { sum += field[n+NX]; cnt++; }
+      if (!solid[n-1])   { sum += field[n-1];   cnt++; }
+      if (!solid[n+1])   { sum += field[n+1];   cnt++; }
+      if (!solid[n-NX])  { sum += field[n-NX];  cnt++; }
+      if (!solid[n+NX])  { sum += field[n+NX];  cnt++; }
+      if (!solid[n-NX-1]){ sum += field[n-NX-1]; cnt++; }
+      if (!solid[n-NX+1]){ sum += field[n-NX+1]; cnt++; }
+      if (!solid[n+NX-1]){ sum += field[n+NX-1]; cnt++; }
+      if (!solid[n+NX+1]){ sum += field[n+NX+1]; cnt++; }
       field[n] = cnt > 0 ? sum / cnt : 0;
     }
   }
@@ -305,33 +307,150 @@ function blurField(field, tmp, solid, passes) {
   }
 }
 
-// ---------------------------------------------------------
-// drawBodyOutline(ctx, solid, sx, sy)
-// ---------------------------------------------------------
-// Traces the solid mask boundary as a canvas path and strokes
-// it white. Works for any shape — cylinder, airfoil, anything.
-// sx, sy : lattice-to-display scale factors.
-function drawBodyOutline(ctx, solid, sx, sy) {
-  ctx.save();
-  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-  ctx.lineWidth   = 1.2;
-  ctx.beginPath();
+// render.js — replace drawBodyOutline with this
+// Called once at geometry build time, not every frame.
+// Stores the outline path for fast per-frame redraw.
+let bodyOutlineCache = null;
+let bodyCanvasCtx   = null;
 
-  for (let y = 1; y < NY-1; y++) {
-    for (let x = 1; x < NX-1; x++) {
-      const n = y * NX + x;
-      if (!solid[n]) continue;
-      // Only draw edges that face a fluid cell
-      const exposedN = !solid[n + NX];
-      const exposedS = !solid[n - NX];
-      const exposedE = !solid[n + 1];
-      const exposedW = !solid[n - 1];
-      if (exposedN) { ctx.moveTo(x*sx, (y+1)*sy); ctx.lineTo((x+1)*sx, (y+1)*sy); }
-      if (exposedS) { ctx.moveTo(x*sx,  y*sy);     ctx.lineTo((x+1)*sx,  y*sy);    }
-      if (exposedE) { ctx.moveTo((x+1)*sx, y*sy);  ctx.lineTo((x+1)*sx, (y+1)*sy); }
-      if (exposedW) { ctx.moveTo(x*sx,  y*sy);     ctx.lineTo(x*sx,    (y+1)*sy);  }
+export function setBodyCanvas(canvas) {
+  bodyCanvasCtx = canvas.getContext('2d');
+}
+
+// Call this whenever geometry changes (reset, new shape, AoA change)
+// Pass the SDF circle/airfoil params, not the solid[] array
+export function drawBodyVector(params) {
+  if (!bodyCanvasCtx) return;
+  const ctx = bodyCanvasCtx;
+  const W   = ctx.canvas.width;
+  const H   = ctx.canvas.height;
+  const sx  = W / NX;
+  const sy  = H / NY;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.save();
+
+  // Glow effect
+  ctx.shadowColor = 'rgba(130,190,255,0.5)';
+  ctx.shadowBlur  = 14 * Math.min(sx, sy);
+
+  if (params.type === 'cylinder') {
+    // Pad by 1.5 lattice units to fully cover staircase pixels
+    const pad = 1.5;
+    const rx = params.radius * sx;
+    const ry = params.radius * sy;
+
+    const grad = ctx.createRadialGradient(
+      params.cx * sx, params.cy * sy, 0,
+      params.cx * sx, params.cy * sy, rx
+    );
+    grad.addColorStop(0,   '#48506a');
+    grad.addColorStop(0.5, '#1a1f2e');
+    grad.addColorStop(1,   '#0a0d16');
+
+    ctx.beginPath();
+    ctx.ellipse(params.cx * sx, params.cy * sy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Sharp stroke on the outside edge
+    ctx.strokeStyle = 'rgba(175,198,230,0.8)';
+    ctx.lineWidth   = 1.5;
+    ctx.stroke();
+
+  } else if (params.type === 'airfoil') {
+    // Expand contour outward by 1.5 lattice units along surface normal
+    const pts = nacaContourExpanded(params, 0.5);
+
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0] * sx, pts[0][1] * sy);
+    for (let k = 1; k < pts.length; k++) {
+      ctx.lineTo(pts[k][0] * sx, pts[k][1] * sy);
     }
+    ctx.closePath();
+
+    const grad = ctx.createLinearGradient(
+      0, (params.cy - params.chord * 0.25) * sy,
+      0, (params.cy + params.chord * 0.25) * sy
+    );
+    grad.addColorStop(0,    '#48506a');
+    grad.addColorStop(0.45, '#1a1f2e');
+    grad.addColorStop(1,    '#0a0d16');
+
+    ctx.fillStyle   = grad;
+    ctx.strokeStyle = 'rgba(175,198,230,0.8)';
+    ctx.lineWidth   = 1.5;
+    ctx.fill();
+    ctx.stroke();
   }
-  ctx.stroke();
+
   ctx.restore();
 }
+
+function nacaContourExpanded(params, padLattice) {
+  const raw = nacaContour(params);        // existing function, unchanged
+  const n   = raw.length;
+  const out = [];
+
+  for (let i = 0; i < n; i++) {
+    const prev = raw[(i - 1 + n) % n];
+    const next = raw[(i + 1) % n];
+
+    // Tangent vector along contour
+    const tx = next[0] - prev[0];
+    const ty = next[1] - prev[1];
+    const len = Math.sqrt(tx * tx + ty * ty) || 1;
+
+    // Outward normal (perpendicular to tangent, pointing out)
+    const nx = -ty / len;
+    const ny =  tx / len;
+
+    out.push([
+      raw[i][0] + nx * padLattice,
+      raw[i][1] + ny * padLattice,
+    ]);
+  }
+
+  return out;
+}
+
+function nacaContour(params) {
+  const { cx, cy, chord, alpha } = params;
+  const t    = 0.12;
+  const cosA = Math.cos(alpha);
+  const sinA = Math.sin(alpha);
+  const nPts = 120;
+  const upper = [], lower = [];
+
+  for (let s = 0; s <= nPts; s++) {
+    const xn = 0.5 * (1 - Math.cos(Math.PI * s / nPts));
+    let yt = (t / 0.2) * chord * (
+       0.2969 * Math.sqrt(xn)
+      - 0.1260 * xn
+      - 0.3516 * xn * xn
+      + 0.2843 * xn * xn * xn
+      - 0.1015 * xn * xn * xn * xn
+    );
+
+    // Force sharp trailing edge — standard coefficients leave
+    // a small nonzero thickness at xn=1, close it explicitly
+    if (xn >= 1.0) yt = 0;
+
+    const lx  =  (xn - 0.5) * chord;
+    const lyU =  yt;
+    const lyL = -yt;
+
+    upper.push([
+      cx + lx * cosA - lyU * sinA,
+      cy + lx * sinA + lyU * cosA,
+    ]);
+    lower.push([
+      cx + lx * cosA - lyL * sinA,
+      cy + lx * sinA + lyL * cosA,
+    ]);
+  }
+
+  // upper LE→TE, then lower TE→LE, closing at the same trailing edge point
+  return [...upper, ...[...lower].reverse()];
+}
+

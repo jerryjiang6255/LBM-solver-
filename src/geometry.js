@@ -31,8 +31,8 @@ function sdfCircle(cx, cy, radius) {
 // centered at (cx, cy).
 // ---------------------------------------------------------
 function sdfNACA0012(cx, cy, chord, alpha) {
-  const cos_a = Math.cos(-alpha);
-  const sin_a = Math.sin(-alpha);
+  const cos_a = Math.cos(alpha);
+  const sin_a = Math.sin(alpha);
 
   return (x, y) => {
     // Translate and rotate into airfoil-local frame

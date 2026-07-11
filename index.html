@@ -28,26 +28,27 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>V2 LBM Flow Visualizer</title>
+  <title>V3 LBM Flow Visualizer</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="app">
     <header class="app-header">
-      <h1>Lattice Boltzmann Flow Visualizer <span class="tag">V2</span></h1>
+      <h1>Lattice Boltzmann Flow Visualizer <span class="tag">V3</span></h1>
       <p class="subtitle">
         D2Q9 · MRT collision · Smagorinsky LES · log-law wall model · BFL boundary
       </p>
     </header>
-
-
     <main class="app-main">
-      <canvas id="flow-canvas"></canvas>
 
+     <div style="position:relative; flex:1; min-width:0;">
+  <canvas id="flow-canvas" style="display:block; width:100%; height:auto;"></canvas>
+  <canvas id="body-canvas" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></canvas>
+  <canvas id="wall-canvas" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></canvas>
+</div>
 
       <aside class="hud">
         <h2>Inlet Flow</h2>
-
 
         <label class="control">
           <span>Inlet velocity (u0)</span>
@@ -55,13 +56,11 @@
           <output id="u0-value">0.20</output>
         </label>
 
-
         <label class="control">
           <span>Outlet density (rhoOut)</span>
           <input type="range" id="rho-slider" min="0.98" max="1.02" step="0.001" value="1.000" />
           <output id="rho-value">1.000</output>
         </label>
-
 
         <label class="control">
           <span>Reynolds number (Re)</span>
@@ -69,9 +68,7 @@
           <output id="re-value">200</output>
         </label>
 
-
         <h2>Display</h2>
-
 
         <label class="control">
           <span>Body</span>
@@ -81,13 +78,11 @@
           </select>
         </label>
 
-        <!-- only show when airfoil is selected -->
         <label class="control" id="aoa-row" style="display:none">
           <span>Angle of attack (°)</span>
           <input type="range" id="aoa-slider" min="-20" max="20" step="0.5" value="0" />
           <output id="aoa-value">0.0</output>
         </label>
-
 
         <label class="control">
           <span>Field</span>
@@ -98,13 +93,11 @@
           </select>
         </label>
 
-
         <label class="control">
           <span>Colormap scale</span>
           <input type="range" id="scale-slider" min="0.02" max="1.0" step="0.005" value="0.4" />
           <output id="scale-value">0.4</output>
         </label>
-
 
         <label class="control">
           <span>Sim speed (steps/frame)</span>
@@ -112,21 +105,36 @@
           <output id="steps-value">10</output>
         </label>
 
+        <h2>Sandbox</h2>
+
+        <label class="control">
+          <span>Draw walls</span>
+          <input type="checkbox" id="sandbox-toggle" />
+        </label>
+
+        <label class="control" id="sandbox-mode-row" style="display:none">
+          <span>Mode</span>
+          <select id="sandbox-mode">
+            <option value="draw">Draw</option>
+            <option value="erase">Erase</option>
+          </select>
+        </label>
+
+        <button id="clear-drawing-btn" type="button" style="display:none">
+          Clear drawing
+        </button>
 
         <div class="buttons">
           <button id="pause-btn" type="button">Pause</button>
           <button id="reset-btn" type="button">Reset</button>
         </div>
 
-
         <div class="stats">
           <div><span>FPS</span><output id="fps-value">--</output></div>
           <div><span>Frame</span><output id="frame-value">0</output></div>
         </div>
 
-
         <p id="app-error" class="error" role="alert"></p>
-
 
         <p class="hint">
           Blue = low, red = high. Gray disk = cylinder. Raising Re
@@ -134,7 +142,9 @@
           first if the field goes blank/NaN.
         </p>
       </aside>
+
     </main>
+
   </div>
 
 
@@ -155,20 +165,18 @@
 
 
   <script type="module">
-    import {
-      NX, NY, f, rho, ux, uy,
-      initField, 
-      setReynolds,
-    } from "./src/lbm.js";
-    import {
-      buildCylinder, defaultCylinder, buildAirfoil
-    } from "./src/geometry.js";
+import {
+  NX, NY, N, Q, f, rho, ux, uy, W,  // add Q, W here
+  initField,
+  setReynolds,
+} from "./src/lbm.js";
+    import { buildCylinder, defaultCylinder, buildAirfoil } from "./src/geometry.js";
+    import { collideFused } from "./src/collisionFused.js";
     import { stream } from "./src/streaming.js";
     import { applyBoundaryConditions } from "./src/boundary.js";
-    import { Renderer } from "./src/render.js";
-    import { collideFused } from "./src/collisionFused.js"; // add
-
-
+    import { Renderer, setBodyCanvas, drawBodyVector } from "./src/render.js";
+    import { paintBrush, clearDrawing, beginStroke, paintStroke, 
+            endStroke, paintedNodes, setWallCanvas, redrawWalls } from "./src/userDraw.js";
 
     // ---------------------------------------------------------
     // GEOMETRY (built once; fixed cylinder for V2)
@@ -188,28 +196,97 @@
     let solid, wallDist, wallAdjacent, solidList, fluidSurfaceList, linkMask, linkQ;
     let bodyType  = 'cylinder';   // 'cylinder' | 'airfoil'
     let aoaDeg    = 0;            // angle of attack in degrees   
+    let solidBase;
 
+    const canvas = document.getElementById("flow-canvas");
+    const renderer = new Renderer(canvas);
+
+
+    const bodyCanvas = document.getElementById('body-canvas');
+    bodyCanvas.width  = renderer.W;
+    bodyCanvas.height = renderer.H;
+    setBodyCanvas(bodyCanvas);
+
+    // ADD THIS immediately after:
+    const wallCanvas = document.getElementById('wall-canvas');
+    wallCanvas.width  = renderer.W;
+    wallCanvas.height = renderer.H;
+    setWallCanvas(wallCanvas);
+
+    
 
     // buildGeometry — now gets everything from one call
+    // Patch buildGeometry() — store solidBase separately:
     function buildGeometry() {
-      let g;
-      if (bodyType === 'airfoil') {
-        const chord  = Math.floor(NX / 3);          // chord ~85 lattice units
-        const acx    = Math.floor(NX / 3);          // leading edge ~1/3 from left
-        const acy    = Math.floor(NY / 2);
-        const alpha  = aoaDeg * Math.PI / 180;
-        g = buildAirfoil(acx, acy, chord, alpha);
-      } else {
-        g = defaultCylinder();
-      }
-      solid            = g.solid;
-      wallDist         = g.wallDist;
-      wallAdjacent     = g.wallAdjacent;
-      linkMask         = g.linkMask;
-      linkQ            = g.linkQ;
-      solidList        = g.solidList;
-      fluidSurfaceList = g.fluidSurfaceList;
-    }
+  let g, bodyParams;
+
+  if (bodyType === 'airfoil') {
+    const chord = Math.floor(NX / 3);
+    const acx   = Math.floor(NX / 3);
+    const acy   = Math.floor(NY / 2);
+    const alpha = aoaDeg * Math.PI / 180;
+    g          = buildAirfoil(acx, acy, chord, alpha);
+    bodyParams = { type: 'airfoil', cx: acx, cy: acy, chord, alpha };
+  } else {
+    g          = defaultCylinder();
+    bodyParams = { type: 'cylinder', cx, cy, radius };
+  }
+
+  solidBase        = g.solid;
+  solid            = new Uint8Array(g.solid);
+  wallDist         = g.wallDist;
+  wallAdjacent     = g.wallAdjacent;
+  linkMask         = g.linkMask;
+  linkQ            = g.linkQ;
+  solidList        = g.solidList;
+  fluidSurfaceList = g.fluidSurfaceList;
+
+  const bCtx = document.getElementById('body-canvas').getContext('2d');
+  bCtx.clearRect(0, 0, bCtx.canvas.width, bCtx.canvas.height);
+  drawBodyVector(bodyParams);
+  redrawWalls();   // ← ADD THIS
+
+}
+
+function rebuildGeometryOnly() {
+  clearDrawing(solid, solidBase);   // ← ADD THIS LINE at the top
+
+  let g, bodyParams;
+
+  if (bodyType === 'airfoil') {
+    const chord = Math.floor(NX / 3);
+    const acx   = Math.floor(NX / 3);
+    const acy   = Math.floor(NY / 2);
+    const alpha = aoaDeg * Math.PI / 180;
+    g          = buildAirfoil(acx, acy, chord, alpha);
+    bodyParams = { type: 'airfoil', cx: acx, cy: acy, chord, alpha };
+  } else {
+    g          = defaultCylinder();
+    bodyParams = { type: 'cylinder', cx, cy, radius };
+  }
+
+  solidBase        = g.solid;
+  solid            = new Uint8Array(g.solid);
+  wallDist         = g.wallDist;
+  wallAdjacent     = g.wallAdjacent;
+  linkMask         = g.linkMask;
+  linkQ            = g.linkQ;
+  solidList        = g.solidList;
+  fluidSurfaceList = g.fluidSurfaceList;
+
+  for (let n = 0; n < N; n++) {
+    if (!solid[n]) continue;
+    const base = n * Q;
+    for (let i = 0; i < Q; i++) f[base + i] = W[i];
+  }
+
+  const bCtx = document.getElementById('body-canvas').getContext('2d');
+  bCtx.clearRect(0, 0, bCtx.canvas.width, bCtx.canvas.height);
+  drawBodyVector(bodyParams);
+  redrawWalls();   // ← ADD THIS
+
+}
+
 
     // ---------------------------------------------------------
     // SIMULATION STATE
@@ -231,19 +308,17 @@
     // consistency), applies the current Reynolds number (which
     // derives NU0/TAU0 in lbm.js from the cylinder's diameter),
     // and reinitializes the field to equilibrium at u0.
+    // Patch resetSim() — clear drawing when resetting:
     function resetSim() {
+      clearDrawing(solid, solidBase); // drain paintedNodes before solid[] is replaced
       buildGeometry();
       setReynolds(reynolds);
       initField(u0, solid);
       frameCount = 0;
       applyBoundaryConditions(u0, solid);
-
     }
 
 
-    const canvas = document.getElementById("flow-canvas");
-    // Renderer no longer needs cylCx/cylCy/cylRadius
-    const renderer = new Renderer(canvas);
 
 
     resetSim();
@@ -320,17 +395,109 @@
     const aoaSlider  = document.getElementById('aoa-slider');
     const aoaValue   = document.getElementById('aoa-value');
 
-    bodySelect.addEventListener('change', () => {
-      bodyType = bodySelect.value;
-      aoaRow.style.display = bodyType === 'airfoil' ? '' : 'none';
-      resetSim();
+bodySelect.addEventListener('change', () => {
+  bodyType = bodySelect.value;                           // set FIRST
+  aoaRow.style.display = bodyType === 'airfoil' ? '' : 'none';
+  rebuildGeometryOnly(); // ← was resetSim(), which wiped the flow field
+
+});
+
+aoaSlider.addEventListener('input', () => {
+  aoaDeg = parseFloat(aoaSlider.value);
+  aoaValue.textContent = aoaDeg.toFixed(1);
+  rebuildGeometryOnly(); // ← was resetSim(), which wiped the flow field
+});
+
+
+    // ---------------------------------------------------------
+    // SANDBOX WIRING
+    // ---------------------------------------------------------
+    let sandboxActive = false;
+    let sandboxMode   = 'draw';   // 'draw' | 'erase'
+    let isDrawing     = false;
+
+    const sandboxToggle  = document.getElementById('sandbox-toggle');
+    const sandboxModeRow = document.getElementById('sandbox-mode-row');
+    const sandboxModeEl  = document.getElementById('sandbox-mode');
+    const clearBtn       = document.getElementById('clear-drawing-btn');
+
+    sandboxToggle.addEventListener('change', () => {
+      sandboxActive = sandboxToggle.checked;
+      sandboxModeRow.style.display = sandboxActive ? '' : 'none';
+      clearBtn.style.display       = sandboxActive ? '' : 'none';
+      canvas.style.cursor          = sandboxActive ? 'crosshair' : 'default';
     });
 
-    aoaSlider.addEventListener('input', () => {
-      aoaDeg = parseFloat(aoaSlider.value);
-      aoaValue.textContent = aoaDeg.toFixed(1);
-      resetSim();   // rebuild geometry at new AoA
+    sandboxModeEl.addEventListener('change', () => {
+      sandboxMode = sandboxModeEl.value;
     });
+
+  clearBtn.addEventListener('click', () => {
+  clearDrawing(solid, solidBase);
+  redrawWalls();
+});
+
+    // Canvas coordinate → lattice coordinate
+    function canvasToLattice(clientX, clientY) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        lx: (clientX - rect.left)  * (NX / rect.width),
+        ly: (clientY - rect.top)   * (NY / rect.height),
+      };
+    }
+
+    canvas.addEventListener('mousedown', (e) => {
+      if (!sandboxActive || e.button !== 0) return;
+      isDrawing = true;
+      const { lx, ly } = canvasToLattice(e.clientX, e.clientY);
+      beginStroke(lx, ly);
+      paintStroke(lx, ly, solid, sandboxMode);
+      redrawWalls();   // ← ADD THIS
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+      if (!sandboxActive || !isDrawing) return;
+      const { lx, ly } = canvasToLattice(e.clientX, e.clientY);
+      paintStroke(lx, ly, solid, sandboxMode);
+      redrawWalls();   // ← ADD THIS
+    });
+
+canvas.addEventListener('mouseup', () => {
+  isDrawing = false;
+  endStroke(sandboxMode);   // ← pass mode so erase strokes aren't recorded
+  redrawWalls();            // ← redraw after stroke completes
+});
+
+canvas.addEventListener('mouseleave', () => {
+  isDrawing = false;
+  endStroke(sandboxMode);
+  redrawWalls();
+});
+
+    // Same for touch:
+    canvas.addEventListener('touchstart', (e) => {
+      if (!sandboxActive) return;
+      e.preventDefault();
+      isDrawing = true;
+      const { lx, ly } = canvasToLattice(e.touches[0].clientX, e.touches[0].clientY);
+      beginStroke(lx, ly);
+      paintStroke(lx, ly, solid, sandboxMode);
+      redrawWalls();   // ← ADD THIS
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', (e) => {
+      if (!sandboxActive || !isDrawing) return;
+      e.preventDefault();
+      const { lx, ly } = canvasToLattice(e.touches[0].clientX, e.touches[0].clientY);
+      paintStroke(lx, ly, solid, sandboxMode);
+      redrawWalls();   // ← ADD THIS
+    }, { passive: false });
+
+canvas.addEventListener('touchend', () => {
+  isDrawing = false;
+  endStroke(sandboxMode);
+  redrawWalls();
+});
 
 
     // ---------------------------------------------------------
@@ -342,13 +509,13 @@
     // render rate" pattern discussed for V1), then draws once.
     // function stepOnce() {
 
+    // stepOnce() — completely unchanged:
     function stepOnce() {
       collideFused(solid, wallAdjacent, wallDist, u0);
-      stream(solid, solidList, linkMask, linkQ, fluidSurfaceList);
+      stream(solid, solidList, linkMask, linkQ, fluidSurfaceList, paintedNodes);
       applyBoundaryConditions(u0, solid);
       frameCount++;
     }
-
 
     let lastTime = performance.now();
     let smoothedFps = 60;
@@ -372,8 +539,10 @@
         { ux, uy },
         solid,
         rho,
-        { mode: displayMode, scale: colorScale, autoScale: false }
+        { mode: displayMode, scale: colorScale, autoScale: false },
+        paintedNodes   // ← add this
       );
+
 
       fpsValue.textContent = smoothedFps.toFixed(0);
       frameValue.textContent = frameCount.toString();
