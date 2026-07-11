@@ -74,10 +74,27 @@
 
 
         <label class="control">
+          <span>Body</span>
+          <select id="body-select">
+            <option value="cylinder">Cylinder</option>
+            <option value="airfoil">NACA 0012</option>
+          </select>
+        </label>
+
+        <!-- only show when airfoil is selected -->
+        <label class="control" id="aoa-row" style="display:none">
+          <span>Angle of attack (°)</span>
+          <input type="range" id="aoa-slider" min="-20" max="20" step="0.5" value="0" />
+          <output id="aoa-value">0.0</output>
+        </label>
+
+
+        <label class="control">
           <span>Field</span>
           <select id="mode-select">
             <option value="speed">Speed</option>
-            <option value="strain">Strain rate</option>
+            <option value="vort">Vorticity</option>
+            <option value="press">Pressure (Cp)</option>
           </select>
         </label>
 
@@ -144,7 +161,7 @@
       setReynolds,
     } from "./src/lbm.js";
     import {
-      buildCylinder, buildSolidList,
+      buildCylinder, defaultCylinder, buildAirfoil
     } from "./src/geometry.js";
     import { stream } from "./src/streaming.js";
     import { applyBoundaryConditions } from "./src/boundary.js";
@@ -168,17 +185,31 @@
     const radius = Math.max(4, Math.floor(NY / 8));
 
 
-    let solid, dist, wallDist, wallAdjacent, solidList;
+    let solid, wallDist, wallAdjacent, solidList, fluidSurfaceList, linkMask, linkQ;
+    let bodyType  = 'cylinder';   // 'cylinder' | 'airfoil'
+    let aoaDeg    = 0;            // angle of attack in degrees   
 
 
+    // buildGeometry — now gets everything from one call
     function buildGeometry() {
-      const g = buildCylinder(cx, cy, radius);
-
-      solid = g.solid;
-      dist = g.dist;
-      solidList = buildSolidList(solid);   // <-- add this
+      let g;
+      if (bodyType === 'airfoil') {
+        const chord  = Math.floor(NX / 3);          // chord ~85 lattice units
+        const acx    = Math.floor(NX / 3);          // leading edge ~1/3 from left
+        const acy    = Math.floor(NY / 2);
+        const alpha  = aoaDeg * Math.PI / 180;
+        g = buildAirfoil(acx, acy, chord, alpha);
+      } else {
+        g = defaultCylinder();
+      }
+      solid            = g.solid;
+      wallDist         = g.wallDist;
+      wallAdjacent     = g.wallAdjacent;
+      linkMask         = g.linkMask;
+      linkQ            = g.linkQ;
+      solidList        = g.solidList;
+      fluidSurfaceList = g.fluidSurfaceList;
     }
-
 
     // ---------------------------------------------------------
     // SIMULATION STATE
@@ -211,7 +242,8 @@
 
 
     const canvas = document.getElementById("flow-canvas");
-    const renderer = new Renderer(canvas, cx, cy, radius);
+    // Renderer no longer needs cylCx/cylCy/cylRadius
+    const renderer = new Renderer(canvas);
 
 
     resetSim();
@@ -282,6 +314,25 @@
     const frameValue = document.getElementById("frame-value");
 
 
+
+    const bodySelect = document.getElementById('body-select');
+    const aoaRow     = document.getElementById('aoa-row');
+    const aoaSlider  = document.getElementById('aoa-slider');
+    const aoaValue   = document.getElementById('aoa-value');
+
+    bodySelect.addEventListener('change', () => {
+      bodyType = bodySelect.value;
+      aoaRow.style.display = bodyType === 'airfoil' ? '' : 'none';
+      resetSim();
+    });
+
+    aoaSlider.addEventListener('input', () => {
+      aoaDeg = parseFloat(aoaSlider.value);
+      aoaValue.textContent = aoaDeg.toFixed(1);
+      resetSim();   // rebuild geometry at new AoA
+    });
+
+
     // ---------------------------------------------------------
     // FRAME LOOP
     // ---------------------------------------------------------
@@ -292,8 +343,8 @@
     // function stepOnce() {
 
     function stepOnce() {
-      collideFused(solid, u0);
-      stream(solid, solidList);
+      collideFused(solid, wallAdjacent, wallDist, u0);
+      stream(solid, solidList, linkMask, linkQ, fluidSurfaceList);
       applyBoundaryConditions(u0, solid);
       frameCount++;
     }
@@ -316,12 +367,13 @@
       }
 
 
+      // draw call — pass rho as third arg, add mode options
       renderer.draw(
         { ux, uy },
         solid,
-        { mode: displayMode, scale: colorScale }
+        rho,
+        { mode: displayMode, scale: colorScale, autoScale: false }
       );
-
 
       fpsValue.textContent = smoothedFps.toFixed(0);
       frameValue.textContent = frameCount.toString();
