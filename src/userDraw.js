@@ -214,38 +214,33 @@ export function redrawWalls() {
 
   if (allStrokes.length === 0) return;
 
-  const lineW = sx * (BRUSH_R * 2 + 1);
+  const lineW = sx * (BRUSH_R + 0.5);
 
   for (const pts of allStrokes) {
     if (pts.length === 0) continue;
 
-    // ctx.save();
-    // ctx.strokeStyle = 'rgba(130,190,255,0.25)';
-    // ctx.lineWidth   = lineW * 1;
-    // ctx.lineCap     = 'round';
-    // ctx.lineJoin    = 'round';
-    // _drawCatmullRom(ctx, pts, sx, sy);
-    // ctx.stroke();
-    // ctx.restore();
-
+    // Pass 1 — glow: widest, semi-transparent cyan, drawn first (bottom)
+    // Bleeds outside the body edge creating the glow effect
     ctx.save();
-    ctx.strokeStyle = '#0d1018';
-    ctx.lineWidth   = lineW;
+    ctx.strokeStyle = 'rgba(175, 198, 230, 0.75)';
+    ctx.lineWidth   = lineW * 1.25;
     ctx.lineCap     = 'round';
     ctx.lineJoin    = 'round';
     _drawCatmullRom(ctx, pts, sx, sy);
     ctx.stroke();
     ctx.restore();
 
-    // ctx.save();
-    // ctx.strokeStyle = 'rgba(175,198,230,0.75)';
-    // ctx.lineWidth   = 1.5;
-    // ctx.lineCap     = 'round';
-    // ctx.lineJoin    = 'round';
-    // _drawCatmullRom(ctx, pts, sx, sy);
-    // ctx.stroke();
-    // ctx.restore();
-  }
+    // Pass 2 — body: medium width, dark grey fill (middle)
+    // This is the visible interior of the wall
+    ctx.save();
+    ctx.strokeStyle = '#292a2f';   // dark grey matching your current color
+    ctx.lineWidth   = lineW;
+    ctx.lineCap     = 'round';
+    ctx.lineJoin    = 'round';
+    _drawCatmullRom(ctx, pts, sx, sy);
+    ctx.stroke();
+    ctx.restore();
+   }
 }
 
 // Draws a Catmull-Rom spline through pts array of {x,y} lattice coords.
