@@ -1,57 +1,5 @@
-// src/collisionFused.js  (V2 — full LES + wall model + TRT collision)
+// src/collisionFused.js  (V4)
 // ============================================================
-// TRT replaces BGK as the collision operator. Physics motivation:
-//
-//   BGK: one relaxation rate omega for ALL deviations from eq.
-//        Ties viscosity (physical) and numerical damping (ghost)
-//        to the same tau — no independent control over either.
-//
-//   MRT: 9 independent rates in moment space. Most accurate but
-//        requires 2× full 9×9 matrix transforms per node per
-//        frame (~162 multiply-adds just for the transforms).
-//
-//   TRT: two rates — omega+ (even/symmetric, sets viscosity) and
-//        omega- (odd/asymmetric, controls ghost/numerical modes).
-//        No matrices — decomposition is just arithmetic on
-//        opposite-direction pairs. Cost over BGK: ~9 extra
-//        adds and 2 multiplies per node (negligible).
-//        Stability over BGK: the Magic Parameter Lambda = 3/16
-//        eliminates parasitic checkerboard and boundary-layer
-//        artifacts that BGK develops at low viscosity.
-//
-// TRT even/odd decomposition (per opposite pair i / ī):
-//   fi+  = (fi  + fī ) / 2   (symmetric part)
-//   fi-  = (fi  - fī ) / 2   (antisymmetric part)
-//   feqi+ = (feqi + feqī) / 2
-//   feqi- = (feqi - feqī) / 2
-//
-// TRT relaxation:
-//   fi+,post = fi+  - omega+ * (fi+  - feqi+)
-//   fi-,post = fi-  - omega- * (fi-  - feqi-)
-//
-// Recombine:
-//   fipost  = fi+,post + fi-,post
-//   fīpost  = fi+,post - fi-,post
-//   f0post  = f0 - omega+ * (f0 - f0eq)   (rest dir, symmetric only)
-//
-// omega+ is set by viscosity (same as BGK):
-//   omega+ = 1 / (3*nu_tot + 0.5)
-//
-// omega- is set by the Magic Parameter Lambda = 3/16:
-//   Lambda = (1/omega+ - 0.5) * (1/omega- - 0.5) = 3/16
-//   => omega- = 1 / (Lambda/(1/omega+ - 0.5) + 0.5)
-//
-// Lambda = 3/16 is the unique value that makes bounce-back walls
-// produce exact no-slip at the halfway point between nodes
-// (eliminating the leading-order position error that BGK has).
-//
-// Loop structure: still 1N × 3Q direction ops total.
-//   Loop 1 (Q): macros
-//   Loop 2 (Q): feq + fneq stress (LES strain rate)
-//   Scalar: LES nu_t, wall model, TRT omega+/omega-
-//   Loop 3 (Q/2 pairs + rest): TRT relax + recombine
-//     Loop 3 iterates 4 pairs (i=1..4) + rest (i=0) = 5 iters
-//     but does 2 reads+writes per pair = equivalent to Q=9 ops.
 // ============================================================
 
 import { N, Q, CX, CY, W, OPP, f, rho, ux, uy, NU0 } from "./lbm.js";
@@ -85,27 +33,8 @@ const TAU_MAX = 5.0;
 // ---------------------------------------------------------
 // TRT Magic Parameter
 // ---------------------------------------------------------
-// Lambda = (1/omega+ - 0.5) * (1/omega- - 0.5)
-// Lambda = 3/16 is the "magic" value: makes the effective
-// wall position of bounce-back independent of viscosity,
-// eliminating the leading-order boundary error that BGK has.
-// Other published choices: 1/4 (minimizes third-order error
-// in bulk), 1/12 (exact advection). 3/16 is the standard
-// choice for channel flow / bluff bodies — use it here.
 const LAMBDA = 3.0 / 16.0;
-
-// ---------------------------------------------------------
-// D2Q9 opposite-pair table for TRT decomposition.
-// Only the 4 pairs (i, OPP[i]) for i = 1..4 are needed;
-// direction 0 (rest) is its own opposite and handled separately.
-// Pairs: (1,3) E-W, (2,4) N-S, (5,7) NE-SW, (6,8) NW-SE
-// Precomputed as a plain array of [i, opp_i] pairs — avoids
-// any runtime branching or OPP[] lookup inside the hot loop.
-// ---------------------------------------------------------
 const TRT_PAIRS = new Uint8Array([1, 3,  2, 4,  5, 7,  6, 8]);
-// 4 pairs × 2 indices = 8 entries
-
-// Scratch buffer for feq — reused per node, no per-frame alloc.
 const feqScratch = new Float32Array(Q);
 
 // ---------------------------------------------------------
@@ -156,7 +85,6 @@ export function collideFused(solid, wallAdjacent, wallDist, u0) {
 
     // =====================================================
     // Direction loop 2: feq + non-equilibrium stress
-    // Sij = -3/(2*rho) * sum_q cq_i*cq_j*fneq_q
     // =====================================================
     const v215         = 1.5 * (u * u + v * v);
     const strainFactor = STRAIN_PRE / r; // -3/(2*rho)
@@ -186,7 +114,6 @@ export function collideFused(solid, wallAdjacent, wallDist, u0) {
 
     // =====================================================
     // Scalar: wall model (log-law + Van Driest)
-    // Only on wall-adjacent cells (~500 nodes for cylinder).
     // =====================================================
     if (wallAdjacent[n]) {
       const y    = Math.max(wallDist[n], Y_MIN);
@@ -212,19 +139,6 @@ export function collideFused(solid, wallAdjacent, wallDist, u0) {
 
     // =====================================================
     // Scalar: TRT relaxation rates
-    //
-    // omega+ (even, symmetric) — controls physical viscosity:
-    //   omega+ = 1 / (3*nu_tot + 0.5)
-    //
-    // omega- (odd, asymmetric) — controls ghost/numerical modes:
-    //   From Lambda = (tau+ - 0.5)*(tau- - 0.5) = 3/16
-    //   => tau- - 0.5 = Lambda / (tau+ - 0.5)
-    //   => tau-       = Lambda / (tau+ - 0.5) + 0.5
-    //   => omega-     = 1 / tau-
-    //
-    // tau+ - 0.5 = 3*nu_tot = the "excess" above the stability
-    // boundary. Flooring at a small epsilon prevents division
-    // by zero if nu_tot is somehow driven to 0 by clamping.
     // =====================================================
     const nuTot   = NU0 + nuT;
     let   tauPlus = 3.0 * nuTot + 0.5;
@@ -239,29 +153,8 @@ export function collideFused(solid, wallAdjacent, wallDist, u0) {
 
     // =====================================================
     // Direction loop 3: TRT relax + recombine
-    //
-    // For each opposite pair (i, ī):
-    //   fi+     = (fi + fī) / 2          even part of f
-    //   fi-     = (fi - fī) / 2          odd part of f
-    //   feqi+   = (feqi + feqī) / 2      even part of feq
-    //   feqi-   = (feqi - feqī) / 2      odd part of feq
-    //
-    //   fi+,post = fi+  - omega+ * (fi+  - feqi+)
-    //   fi-,post = fi-  - omega- * (fi-  - feqi-)
-    //
-    //   fipost  = fi+,post + fi-,post
-    //   fīpost  = fi+,post - fi-,post
-    //
-    // Rest direction (i=0, ī=0) is symmetric only:
-    //   f0post  = f0 - omega+ * (f0 - feq0)
-    //
-    // Loop over 4 pairs (8 entries in TRT_PAIRS), then handle
-    // rest direction separately. Total: 8+1 = 9 populations
-    // updated, same as BGK, with 2 extra multiplies per pair
-    // (omegaMinus) and a handful of extra adds for the split.
     // =====================================================
 
-    // Rest direction (index 0) — symmetric, no opposite
     f[base] -= omegaPlus * (f[base] - feqScratch[0]);
 
     // 4 opposite pairs

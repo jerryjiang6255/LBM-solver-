@@ -1,45 +1,5 @@
 // src/render.js  (V3)
 // ============================================================
-// Key improvements over V2:
-//
-//   1. TWO-CANVAS APPROACH (main smoothness fix)
-//      Physics runs at NX×NY (256×128). A small offscreen
-//      canvas (buf) is written at that resolution via
-//      putImageData, then upscaled to the display canvas
-//      with drawImage + imageSmoothingQuality='high'. The
-//      browser GPU bilinear-filters every pixel boundary for
-//      free — this is why the reference looks smooth with no
-//      extra blur passes needed.
-//
-//   2. VORTICITY + PRESSURE display modes (new)
-//      Vorticity = curl of velocity = duy/dx - dux/dy.
-//      Shows rotating structures the speed view hides.
-//      Pressure = (rho - 1)/3 in lattice units, normalised
-//      to Cp. Both match the reference's view modes.
-//
-//   3. VELOCITY PRE-SMOOTH before vorticity only
-//      Vorticity amplifies grid-scale noise (2-cell ripple).
-//      Smoothing ux/uy with 2 passes of [1,2,1]/4 before
-//      taking the curl removes the spurious criss-cross
-//      pattern while leaving real shear layers intact.
-//      Speed and pressure views don't need this.
-//
-//   4. SOLID FILL + LIGHT SCALAR SMOOTH (kept from V2)
-//      Solid cells get averaged from fluid neighbours before
-//      colourmap lookup, preventing the dark halo. Two passes
-//      of [1,2,1]/4 on the scalar only (not velocity).
-//
-//   5. BODY-AGNOSTIC OUTLINE
-//      drawOutline now accepts a `geometry` object and draws
-//      the solid mask boundary as a filled dark polygon using
-//      the canvas path API — works for cylinder and airfoil.
-//
-//   6. AUTO-SCALE option
-//      If options.autoScale is true, the renderer computes
-//      the per-frame 98th-percentile speed and uses that as
-//      the colour scale, so the map is always well-saturated
-//      regardless of Re or u0.
-// ============================================================
 
 import { NX, NY, N } from "./lbm.js";
 
@@ -94,26 +54,21 @@ const SOLID_R = 40, SOLID_G = 40, SOLID_B = 45;
 // ---------------------------------------------------------
 const scalarField = new Float32Array(N);
 const scalarTmp   = new Float32Array(N);
-const uxS         = new Float32Array(N);   // smoothed ux for vorticity
+const uxS         = new Float32Array(N);   
 const uyS         = new Float32Array(N);
-const uxT         = new Float32Array(N);   // temp for blur passes
+const uxT         = new Float32Array(N);  
 const uyT         = new Float32Array(N);
 
 // ---------------------------------------------------------
 // Renderer(displayCanvas)
 // ---------------------------------------------------------
-// displayCanvas : the full-size CSS canvas the user sees.
-// Internally creates a small offscreen buf at NX×NY that
-// receives putImageData, then gets GPU-upscaled via drawImage.
 export function Renderer(displayCanvas) {
-  // Offscreen buffer at physics resolution
   this.buf     = document.createElement('canvas');
   this.buf.width  = NX;
   this.buf.height = NY;
   this.bufCx   = this.buf.getContext('2d');
   this.img     = this.bufCx.createImageData(NX, NY);
 
-  // Display canvas — sized to its CSS layout size × DPR
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   this.dpr   = dpr;
   displayCanvas.width  = displayCanvas.clientWidth  * dpr || NX * 4;
@@ -122,21 +77,12 @@ export function Renderer(displayCanvas) {
   this.W     = displayCanvas.width;
   this.H     = displayCanvas.height;
 
-  // Smoothed EMA scale for auto-scale mode
   this.smoothedScale = 0.2;
 }
 
 // ---------------------------------------------------------
 // Renderer.prototype.draw(fields, solid, rho, options)
 // ---------------------------------------------------------
-// fields  : { ux, uy }  Float32Array(N)
-// solid   : Uint8Array(N)
-// rho     : Float32Array(N)  — needed for pressure mode
-// options : {
-//   mode      : 'speed' | 'vort' | 'press'  (default 'speed')
-//   scale     : normalisation constant  (ignored if autoScale)
-//   autoScale : bool — compute scale from field each frame
-// }
 Renderer.prototype.draw = function (fields, solid, rho, options, paintedNodes) {
   const mode      = (options && options.mode)      || 'speed';
   const autoScale = (options && options.autoScale) || false;
@@ -219,20 +165,12 @@ Renderer.prototype.draw = function (fields, solid, rho, options, paintedNodes) {
   this.ctx.drawImage(this.buf, 0, 0, this.W, this.H);
 
 };
-
-
-
-
 // ---------------------------------------------------------
 // smoothVelocity(ux, uy, solid, passes)
 // ---------------------------------------------------------
-// [1,2,1]/4 separable blur on ux/uy into uxS/uyS.
-// Used only for vorticity — removes grid-scale ripple
-// before taking the curl without affecting solver state.
 function smoothVelocity(ux, uy, solid, passes) {
   uxS.set(ux); uyS.set(uy);
   for (let p = 0; p < passes; p++) {
-    // horizontal
     for (let y = 1; y < NY-1; y++) {
       const row = y * NX;
       for (let x = 1; x < NX-1; x++) {
@@ -242,7 +180,6 @@ function smoothVelocity(ux, uy, solid, passes) {
         uyT[n] = (uyS[n-1] + 2*uyS[n] + uyS[n+1]) * 0.25;
       }
     }
-    // vertical
     for (let y = 1; y < NY-1; y++) {
       const row = y * NX;
       for (let x = 1; x < NX-1; x++) {
@@ -258,8 +195,6 @@ function smoothVelocity(ux, uy, solid, passes) {
 // ---------------------------------------------------------
 // fillSolids(field, solid)
 // ---------------------------------------------------------
-// In-place: solid cells get average of fluid neighbours.
-// Prevents dark halo when blur crosses the boundary.
 function fillSolids(field, solid) {
   for (let y = 1; y < NY-1; y++) {
     for (let x = 1; x < NX-1; x++) {
@@ -282,7 +217,6 @@ function fillSolids(field, solid) {
 // ---------------------------------------------------------
 // blurField(field, tmp, solid, passes)
 // ---------------------------------------------------------
-// Separable [1,2,1]/4 in-place blur on the scalar field.
 function blurField(field, tmp, solid, passes) {
   for (let p = 0; p < passes; p++) {
     // horizontal
@@ -306,19 +240,12 @@ function blurField(field, tmp, solid, passes) {
     }
   }
 }
-
-// render.js — replace drawBodyOutline with this
-// Called once at geometry build time, not every frame.
-// Stores the outline path for fast per-frame redraw.
 let bodyOutlineCache = null;
 let bodyCanvasCtx   = null;
 
 export function setBodyCanvas(canvas) {
   bodyCanvasCtx = canvas.getContext('2d');
 }
-
-// Call this whenever geometry changes (reset, new shape, AoA change)
-// Pass the SDF circle/airfoil params, not the solid[] array
 export function drawBodyVector(params) {
   if (!bodyCanvasCtx) return;
   const ctx = bodyCanvasCtx;
@@ -329,13 +256,10 @@ export function drawBodyVector(params) {
 
   ctx.clearRect(0, 0, W, H);
   ctx.save();
-
-  // Glow effect
   ctx.shadowColor = 'rgba(130,190,255,0.5)';
   ctx.shadowBlur  = 14 * Math.min(sx, sy);
 
   if (params.type === 'cylinder') {
-    // Pad by 1.5 lattice units to fully cover staircase pixels
     const pad = 1.5;
     const rx = params.radius * sx;
     const ry = params.radius * sy;
@@ -352,14 +276,11 @@ export function drawBodyVector(params) {
     ctx.ellipse(params.cx * sx, params.cy * sy, rx, ry, 0, 0, Math.PI * 2);
     ctx.fillStyle = grad;
     ctx.fill();
-
-    // Sharp stroke on the outside edge
     ctx.strokeStyle = 'rgba(175,198,230,0.8)';
     ctx.lineWidth   = 1.5;
     ctx.stroke();
 
   } else if (params.type === 'airfoil') {
-    // Expand contour outward by 1.5 lattice units along surface normal
     const pts = nacaContourExpanded(params, 0.5);
 
     ctx.beginPath();
@@ -368,7 +289,6 @@ export function drawBodyVector(params) {
       ctx.lineTo(pts[k][0] * sx, pts[k][1] * sy);
     }
     ctx.closePath();
-
     const grad = ctx.createLinearGradient(
       0, (params.cy - params.chord * 0.25) * sy,
       0, (params.cy + params.chord * 0.25) * sy
@@ -382,26 +302,51 @@ export function drawBodyVector(params) {
     ctx.lineWidth   = 1.5;
     ctx.fill();
     ctx.stroke();
-  }
 
+  } else if (params.type === 'blocks') {
+    const { blocks, blockSize } = params;
+    const pad  = 1.0;  
+    const half = blockSize / 2 + pad;
+
+    for (const [bx, by] of blocks) {
+      const pw = half * 2 * sx;
+      const ph = half * 2 * sy;
+      const px = bx * sx - half * sx;
+      const py = by * sy - half * sy;
+      const r  = Math.min(pw, ph) * 0.2;
+
+      const grad = ctx.createRadialGradient(
+        bx * sx, by * sy, 0,
+        bx * sx, by * sy, Math.max(pw, ph) * 0.7
+      );
+      grad.addColorStop(0,   '#48506a');
+      grad.addColorStop(0.5, '#1a1f2e');
+      grad.addColorStop(1,   '#0a0d16');
+
+      ctx.beginPath();
+      ctx.roundRect(px, py, pw, ph, r);
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(175,198,230,0.8)';
+      ctx.lineWidth   = 1.2;
+      ctx.stroke();
+    }
+  }
   ctx.restore();
 }
 
 function nacaContourExpanded(params, padLattice) {
-  const raw = nacaContour(params);        // existing function, unchanged
+  const raw = nacaContour(params);        
   const n   = raw.length;
   const out = [];
 
   for (let i = 0; i < n; i++) {
     const prev = raw[(i - 1 + n) % n];
     const next = raw[(i + 1) % n];
-
-    // Tangent vector along contour
     const tx = next[0] - prev[0];
     const ty = next[1] - prev[1];
     const len = Math.sqrt(tx * tx + ty * ty) || 1;
-
-    // Outward normal (perpendicular to tangent, pointing out)
     const nx = -ty / len;
     const ny =  tx / len;
 
@@ -431,15 +376,10 @@ function nacaContour(params) {
       + 0.2843 * xn * xn * xn
       - 0.1015 * xn * xn * xn * xn
     );
-
-    // Force sharp trailing edge — standard coefficients leave
-    // a small nonzero thickness at xn=1, close it explicitly
     if (xn >= 1.0) yt = 0;
-
     const lx  =  (xn - 0.5) * chord;
     const lyU =  yt;
     const lyL = -yt;
-
     upper.push([
       cx + lx * cosA - lyU * sinA,
       cy + lx * sinA + lyU * cosA,
@@ -449,8 +389,7 @@ function nacaContour(params) {
       cy + lx * sinA + lyL * cosA,
     ]);
   }
-
-  // upper LE→TE, then lower TE→LE, closing at the same trailing edge point
   return [...upper, ...[...lower].reverse()];
 }
+
 

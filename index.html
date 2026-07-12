@@ -1,28 +1,6 @@
 <!DOCTYPE html>
 <!-- ============================================================
      index.html (V2)
-     ------------------------------------------------------------
-     Wires lbm.js, geometry.js, turbulence.js, collision.js,
-     streaming.js, boundary.js, render.js together and runs the
-     per-frame workflow from the physics doc:
-
-
-       computeMacros
-       -> computeEquilibriumAndNonEquilibrium
-       -> computeStrainRate
-       -> computeSmagorinskyViscosity
-       -> applyWallModel
-       -> collideMRT
-       -> stream (fluid-fluid + BFL)
-       -> applyBoundaryConditions (walls, Zou-He inlet/outlet)
-       -> draw
-
-
-     Geometry (cylinder mask, wall distance, BFL links) is built
-     ONCE at startup/reset, since V2's obstacle is fixed for now —
-     only flow parameters (inlet velocity, Reynolds number,
-     outlet density) are live-tunable, same interaction model as
-     V1's slider HUD.
      ============================================================ -->
 <html lang="en">
 <head>
@@ -52,16 +30,11 @@
 
         <label class="control">
           <span>Inlet velocity (u0)</span>
-          <input type="range" id="u0-slider" min="0.02" max="0.4" step="0.005" value="0.2" />
+          <input type="range" id="u0-slider" min="0.02" max="1" step="0.005" value="0.2" />
           <output id="u0-value">0.20</output>
         </label>
 
-        <label class="control">
-          <span>Outlet density (rhoOut)</span>
-          <input type="range" id="rho-slider" min="0.98" max="1.02" step="0.001" value="1.000" />
-          <output id="rho-value">1.000</output>
-        </label>
-
+        
         <label class="control">
           <span>Reynolds number (Re)</span>
           <input type="range" id="re-slider" min="20" max="2000" step="10" value="200" />
@@ -75,6 +48,8 @@
           <select id="body-select">
             <option value="cylinder">Cylinder</option>
             <option value="airfoil">NACA 0012</option>
+            <option value="empty">Empty</option>
+            <option value="blocks">Block matrix</option>
           </select>
         </label>
 
@@ -88,8 +63,7 @@
           <span>Field</span>
           <select id="mode-select">
             <option value="speed">Speed</option>
-            <option value="vort">Vorticity</option>
-            <option value="press">Pressure (Cp)</option>
+            <!-- <option value="vort">Vorticity</option> -->
           </select>
         </label>
 
@@ -149,10 +123,6 @@
 
 
   <script>
-    // Global error trap: surfaces module-load / runtime errors as
-    // visible text, since a thrown error inside an ES module can
-    // otherwise leave the canvas silently blank with no obvious
-    // console signal in some browsers.
     const errEl = () => document.getElementById('app-error');
     window.addEventListener('error', (e) => {
       errEl().textContent = 'Error: ' + (e.message || e.error) +
@@ -166,11 +136,12 @@
 
   <script type="module">
 import {
-  NX, NY, N, Q, f, rho, ux, uy, W,  // add Q, W here
+  NX, NY, N, Q, f, rho, ux, uy, W,  
   initField,
   setReynolds,
 } from "./src/lbm.js";
-    import { buildCylinder, defaultCylinder, buildAirfoil } from "./src/geometry.js";
+    import { buildCylinder, defaultCylinder, buildAirfoil,
+         buildEmpty, defaultBlockMatrix } from "./src/geometry.js";
     import { collideFused } from "./src/collisionFused.js";
     import { stream } from "./src/streaming.js";
     import { applyBoundaryConditions } from "./src/boundary.js";
@@ -181,21 +152,14 @@ import {
     // ---------------------------------------------------------
     // GEOMETRY (built once; fixed cylinder for V2)
     // ---------------------------------------------------------
-    // cx, cy, radius : same default placement as V1 (centered
-    // vertically, quarter of the way in from the left).
-    // solid, dist    : from buildCylinder — solid mask + signed
-    //                  distance to the circle boundary.
-    // wallDist       : per-node wall distance, feeds the wall model.
-    // wallAdjacent   : which fluid cells actually run the wall model.
-    // linkMask/linkQ : BFL link metadata, feeds streaming.js.
     const cx = Math.floor(NX / 4);
     const cy = Math.floor(NY / 2);
     const radius = Math.max(4, Math.floor(NY / 8));
 
 
     let solid, wallDist, wallAdjacent, solidList, fluidSurfaceList, linkMask, linkQ;
-    let bodyType  = 'cylinder';   // 'cylinder' | 'airfoil'
-    let aoaDeg    = 0;            // angle of attack in degrees   
+    let bodyType  = 'cylinder';   
+    let aoaDeg    = 0;            
     let solidBase;
 
     const canvas = document.getElementById("flow-canvas");
@@ -207,59 +171,76 @@ import {
     bodyCanvas.height = renderer.H;
     setBodyCanvas(bodyCanvas);
 
-    // ADD THIS immediately after:
     const wallCanvas = document.getElementById('wall-canvas');
     wallCanvas.width  = renderer.W;
     wallCanvas.height = renderer.H;
     setWallCanvas(wallCanvas);
 
-    
-
-    // buildGeometry — now gets everything from one call
-    // Patch buildGeometry() — store solidBase separately:
     function buildGeometry() {
-  let g, bodyParams;
+      let g, bodyParams;
+        if (bodyType === 'airfoil') {
+          const chord = Math.floor(NX / 3);
+          const acx   = Math.floor(NX / 3);
+          const acy   = Math.floor(NY / 2);
+          const alpha = aoaDeg * Math.PI / 180;
+          g          = buildAirfoil(acx, acy, chord, alpha);
+          bodyParams = { type: 'airfoil', cx: acx, cy: acy, chord, alpha };
 
-  if (bodyType === 'airfoil') {
-    const chord = Math.floor(NX / 3);
-    const acx   = Math.floor(NX / 3);
-    const acy   = Math.floor(NY / 2);
-    const alpha = aoaDeg * Math.PI / 180;
-    g          = buildAirfoil(acx, acy, chord, alpha);
-    bodyParams = { type: 'airfoil', cx: acx, cy: acy, chord, alpha };
-  } else {
-    g          = defaultCylinder();
-    bodyParams = { type: 'cylinder', cx, cy, radius };
-  }
+        } else if (bodyType === 'empty') {
+          g          = buildEmpty();
+          bodyParams = { type: 'empty' };
 
-  solidBase        = g.solid;
-  solid            = new Uint8Array(g.solid);
-  wallDist         = g.wallDist;
-  wallAdjacent     = g.wallAdjacent;
-  linkMask         = g.linkMask;
-  linkQ            = g.linkQ;
-  solidList        = g.solidList;
-  fluidSurfaceList = g.fluidSurfaceList;
+        } else if (bodyType === 'blocks') {
+            const result   = defaultBlockMatrix();
+            g              = result.geometry;
+            bodyParams     = { type: 'blocks', blocks: result.blocks, blockSize: result.blockSize };
 
-  const bCtx = document.getElementById('body-canvas').getContext('2d');
-  bCtx.clearRect(0, 0, bCtx.canvas.width, bCtx.canvas.height);
-  drawBodyVector(bodyParams);
-  redrawWalls();   // ← ADD THIS
+        } else {
+          g          = defaultCylinder();
+          bodyParams = { type: 'cylinder', cx, cy, radius };
+        }
 
-}
+        solidBase        = g.solid;
+        solid            = new Uint8Array(g.solid);
+        wallDist         = g.wallDist;
+        wallAdjacent     = g.wallAdjacent;
+        linkMask         = g.linkMask;
+        linkQ            = g.linkQ;
+        solidList        = g.solidList;
+        fluidSurfaceList = g.fluidSurfaceList;
+
+        const bCtx = document.getElementById('body-canvas').getContext('2d');
+        bCtx.clearRect(0, 0, bCtx.canvas.width, bCtx.canvas.height);
+
+        if (bodyType !== 'empty') {
+          drawBodyVector(bodyParams);
+        }
+
+      redrawWalls();
+    }
 
 function rebuildGeometryOnly() {
-  clearDrawing(solid, solidBase);   // ← ADD THIS LINE at the top
+  clearDrawing(solid, solidBase);  
 
   let g, bodyParams;
 
-  if (bodyType === 'airfoil') {
+    if (bodyType === 'airfoil') {
     const chord = Math.floor(NX / 3);
     const acx   = Math.floor(NX / 3);
     const acy   = Math.floor(NY / 2);
     const alpha = aoaDeg * Math.PI / 180;
     g          = buildAirfoil(acx, acy, chord, alpha);
     bodyParams = { type: 'airfoil', cx: acx, cy: acy, chord, alpha };
+
+  } else if (bodyType === 'empty') {
+    g          = buildEmpty();
+    bodyParams = { type: 'empty' };
+
+  } else if (bodyType === 'blocks') {
+    const result   = defaultBlockMatrix();
+    g              = result.geometry;
+    bodyParams     = { type: 'blocks', blocks: result.blocks, blockSize: result.blockSize };
+
   } else {
     g          = defaultCylinder();
     bodyParams = { type: 'cylinder', cx, cy, radius };
@@ -283,16 +264,13 @@ function rebuildGeometryOnly() {
   const bCtx = document.getElementById('body-canvas').getContext('2d');
   bCtx.clearRect(0, 0, bCtx.canvas.width, bCtx.canvas.height);
   drawBodyVector(bodyParams);
-  redrawWalls();   // ← ADD THIS
+  redrawWalls();  
 
 }
-
-
     // ---------------------------------------------------------
     // SIMULATION STATE
     // ---------------------------------------------------------
     let u0 = parseFloat(document.getElementById("u0-slider").value);
-    let rhoOut = parseFloat(document.getElementById("rho-slider").value);
     let reynolds = parseFloat(document.getElementById("re-slider").value);
     let displayMode = document.getElementById("mode-select").value;
     let colorScale = parseFloat(document.getElementById("scale-slider").value);
@@ -300,17 +278,11 @@ function rebuildGeometryOnly() {
     let running = true;
     let frameCount = 0;
 
-
     // ---------------------------------------------------------
     // resetSim()
     // ---------------------------------------------------------
-    // Rebuilds geometry (fixed shape, but recomputed for
-    // consistency), applies the current Reynolds number (which
-    // derives NU0/TAU0 in lbm.js from the cylinder's diameter),
-    // and reinitializes the field to equilibrium at u0.
-    // Patch resetSim() — clear drawing when resetting:
     function resetSim() {
-      clearDrawing(solid, solidBase); // drain paintedNodes before solid[] is replaced
+      clearDrawing(solid, solidBase);
       buildGeometry();
       setReynolds(reynolds);
       initField(u0, solid);
@@ -318,11 +290,7 @@ function rebuildGeometryOnly() {
       applyBoundaryConditions(u0, solid);
     }
 
-
-
-
     resetSim();
-
 
     // ---------------------------------------------------------
     // UI WIRING
@@ -334,21 +302,12 @@ function rebuildGeometryOnly() {
       u0Value.textContent = u0.toFixed(3);
     });
 
-
-    const rhoSlider = document.getElementById("rho-slider");
-    const rhoValue = document.getElementById("rho-value");
-    rhoSlider.addEventListener("input", () => {
-      rhoOut = parseFloat(rhoSlider.value);
-      rhoValue.textContent = rhoOut.toFixed(3);
-    });
-
-
     const reSlider = document.getElementById("re-slider");
     const reValue = document.getElementById("re-value");
     reSlider.addEventListener("input", () => {
       reynolds = parseFloat(reSlider.value);
       reValue.textContent = reynolds.toFixed(0);
-      setReynolds(reynolds); // live update: changes NU0/TAU0 immediately
+      setReynolds(reynolds); 
     });
 
 
@@ -396,24 +355,22 @@ function rebuildGeometryOnly() {
     const aoaValue   = document.getElementById('aoa-value');
 
 bodySelect.addEventListener('change', () => {
-  bodyType = bodySelect.value;                           // set FIRST
+  bodyType = bodySelect.value;
   aoaRow.style.display = bodyType === 'airfoil' ? '' : 'none';
-  rebuildGeometryOnly(); // ← was resetSim(), which wiped the flow field
-
+  rebuildGeometryOnly();
 });
 
 aoaSlider.addEventListener('input', () => {
   aoaDeg = parseFloat(aoaSlider.value);
   aoaValue.textContent = aoaDeg.toFixed(1);
-  rebuildGeometryOnly(); // ← was resetSim(), which wiped the flow field
+  rebuildGeometryOnly(); 
 });
-
 
     // ---------------------------------------------------------
     // SANDBOX WIRING
     // ---------------------------------------------------------
     let sandboxActive = false;
-    let sandboxMode   = 'draw';   // 'draw' | 'erase'
+    let sandboxMode   = 'draw';  
     let isDrawing     = false;
 
     const sandboxToggle  = document.getElementById('sandbox-toggle');
@@ -437,7 +394,6 @@ aoaSlider.addEventListener('input', () => {
   redrawWalls();
 });
 
-    // Canvas coordinate → lattice coordinate
     function canvasToLattice(clientX, clientY) {
       const rect = canvas.getBoundingClientRect();
       return {
@@ -464,8 +420,8 @@ aoaSlider.addEventListener('input', () => {
 
 canvas.addEventListener('mouseup', () => {
   isDrawing = false;
-  endStroke(sandboxMode);   // ← pass mode so erase strokes aren't recorded
-  redrawWalls();            // ← redraw after stroke completes
+  endStroke(sandboxMode);  
+  redrawWalls();          
 });
 
 canvas.addEventListener('mouseleave', () => {
@@ -474,7 +430,6 @@ canvas.addEventListener('mouseleave', () => {
   redrawWalls();
 });
 
-    // Same for touch:
     canvas.addEventListener('touchstart', (e) => {
       if (!sandboxActive) return;
       e.preventDefault();
@@ -482,7 +437,7 @@ canvas.addEventListener('mouseleave', () => {
       const { lx, ly } = canvasToLattice(e.touches[0].clientX, e.touches[0].clientY);
       beginStroke(lx, ly);
       paintStroke(lx, ly, solid, sandboxMode);
-      redrawWalls();   // ← ADD THIS
+      redrawWalls();   
     }, { passive: false });
 
     canvas.addEventListener('touchmove', (e) => {
@@ -490,7 +445,7 @@ canvas.addEventListener('mouseleave', () => {
       e.preventDefault();
       const { lx, ly } = canvasToLattice(e.touches[0].clientX, e.touches[0].clientY);
       paintStroke(lx, ly, solid, sandboxMode);
-      redrawWalls();   // ← ADD THIS
+      redrawWalls();   
     }, { passive: false });
 
 canvas.addEventListener('touchend', () => {
@@ -503,13 +458,6 @@ canvas.addEventListener('touchend', () => {
     // ---------------------------------------------------------
     // FRAME LOOP
     // ---------------------------------------------------------
-    // One call to stepOnce() runs the full physics workflow from
-    // the doc, in order. tick() runs stepOnce() stepsPerFrame
-    // times per rendered frame (same "decouple physics rate from
-    // render rate" pattern discussed for V1), then draws once.
-    // function stepOnce() {
-
-    // stepOnce() — completely unchanged:
     function stepOnce() {
       collideFused(solid, wallAdjacent, wallDist, u0);
       stream(solid, solidList, linkMask, linkQ, fluidSurfaceList, paintedNodes);
@@ -534,13 +482,12 @@ canvas.addEventListener('touchend', () => {
       }
 
 
-      // draw call — pass rho as third arg, add mode options
       renderer.draw(
         { ux, uy },
         solid,
         rho,
         { mode: displayMode, scale: colorScale, autoScale: false },
-        paintedNodes   // ← add this
+        paintedNodes   
       );
 
 

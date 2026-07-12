@@ -1,13 +1,4 @@
-// src/geometry.js  (V3 — 2-pass SDF geometry)
-// ============================================================
-// Pass 1: N nodes, scalar per node — no neighbor reads
-//   sdf[n], solid[n], wallDist[n]
-//
-// Pass 2: N nodes × Q directions — neighbor reads
-//   wallAdjacent[n], linkMask[i*N+n], linkQ[i*N+n], solidList
-//
-// Total: N + N*Q ops at startup. Zero per-frame geometry cost.
-// ============================================================
+// src/geometry.js  (V4)
 
 import { NX, NY, N, Q, CX, CY, idx, setCharacteristicLength } from "./lbm.js";
 
@@ -17,18 +8,20 @@ const Q_MAX = 1.0;
 
 // ---------------------------------------------------------
 // SDF FUNCTIONS
-// Only this needs to change when adding new shapes in V4+.
 // ---------------------------------------------------------
 function sdfCircle(cx, cy, radius) {
   return (x, y) => Math.sqrt((x - cx) ** 2 + (y - cy) ** 2) - radius;
 }
-// Add this alongside sdfCircle at the top of geometry.js
+
+// ---------------------------------------------------------
+// Empty domain — no obstacle, pure free-stream
+// ---------------------------------------------------------
+function sdfEmpty() {
+  return (x, y) => 1.0;
+}
 
 // ---------------------------------------------------------
 // NACA 4-digit thickness distribution
-// Returns signed distance approximation for a NACA 00xx airfoil
-// at angle of attack `alpha` (radians), chord length `chord`,
-// centered at (cx, cy).
 // ---------------------------------------------------------
 function sdfNACA0012(cx, cy, chord, alpha) {
   const cos_a = Math.cos(alpha);
@@ -62,28 +55,27 @@ function sdfNACA0012(cx, cy, chord, alpha) {
 }
 
 // ---------------------------------------------------------
+// Matrix of square blocks
+// ---------------------------------------------------------
+function sdfExplicitBlocks(blocks, blockSize) {
+  const half = blockSize / 2;
+
+  return (x, y) => {
+    let minDist = 1.0;
+    for (let k = 0; k < blocks.length; k++) {
+      const lx = Math.abs(x - blocks[k][0]) - half;
+      const ly = Math.abs(y - blocks[k][1]) - half;
+      // Box SDF: negative inside, positive outside
+      const dist = Math.max(lx, ly);
+      if (dist < minDist) minDist = dist;
+    }
+    return minDist;
+  };
+}
+
+// ---------------------------------------------------------
 // buildGeometryFromSDF(sdfFunc)
 // ---------------------------------------------------------
-// Core builder — takes any SDF function, returns all geometry
-// arrays needed by solver + renderer. Called by buildCylinder
-// and rebuildGeometry (V4 live-redraw hook).
-//
-// Pass 1 — N nodes, 1 sdfFunc call + scalar math per node:
-//   sdf[n]      : signed distance (+ fluid, - solid)
-//   solid[n]    : 1 if sdf <= 0
-//   wallDist[n] : sdf value for fluid nodes, 0 for solid
-//
-// Pass 2 — N nodes × Q directions, neighbor reads:
-//   wallAdjacent[n]  : 1 if any Q neighbor is solid
-//   linkMask[i*N+n]  : 1 if direction i from n hits solid
-//   linkQ[i*N+n]     : BFL q from SDF linear interpolation
-//   solidList        : compact array of surface solid node indices
-//
-// The two passes can't be merged because Pass 2 reads
-// solid[neighbor] — which requires solid[] to be fully
-// written for all nodes before any neighbor check runs.
-// That's the fundamental data dependency that makes 2 passes
-// the minimum rather than 1.
 function buildGeometryFromSDF(sdfFunc) {
   const sdf          = new Float32Array(N);
   const solid        = new Uint8Array(N);
@@ -173,11 +165,55 @@ export function buildCylinder(cx, cy, radius) {
 // ---------------------------------------------------------
 // buildAirfoil(cx, cy, chord, alpha)
 // ---------------------------------------------------------
-// alpha : angle of attack in RADIANS
-// chord : chord length in lattice units
 export function buildAirfoil(cx, cy, chord, alpha) {
   setCharacteristicLength(chord);
   return buildGeometryFromSDF(sdfNACA0012(cx, cy, chord, alpha));
+}
+
+export function buildEmpty() {
+  setCharacteristicLength(NY); // use domain height as reference
+  return buildGeometryFromSDF(sdfEmpty());
+}
+
+// ---------------------------------------------------------
+// defaultBlockMatrix()
+// ---------------------------------------------------------
+export function defaultBlockMatrix() {
+  const blockSize = 4;
+
+  const colXs = [
+    Math.floor(NX * 0.30),
+    Math.floor(NX * 0.43),
+    Math.floor(NX * 0.56),
+    Math.floor(NX * 0.69),
+  ];
+
+  const rows4 = [
+    Math.floor(NY * 0.18),
+    Math.floor(NY * 0.38),
+    Math.floor(NY * 0.62),
+    Math.floor(NY * 0.82),
+  ];
+
+  const rows3 = [
+    Math.floor(NY * 0.28),
+    Math.floor(NY * 0.50),
+    Math.floor(NY * 0.72),
+  ];
+
+  const blocks = [];
+  for (const x of [colXs[0], colXs[2]]) {
+    for (const y of rows4) blocks.push([x, y]);
+  }
+  for (const x of [colXs[1], colXs[3]]) {
+    for (const y of rows3) blocks.push([x, y]);
+  }
+
+  setCharacteristicLength(blockSize * 4);
+  const geometry = buildGeometryFromSDF(sdfExplicitBlocks(blocks, blockSize));
+
+  // Return blocks and blockSize alongside geometry so renderer can draw them
+  return { geometry, blocks, blockSize };
 }
 
 // ---------------------------------------------------------
@@ -190,13 +226,3 @@ export function defaultCylinder() {
   return buildCylinder(cx, cy, radius);
 }
 
-// ---------------------------------------------------------
-// rebuildGeometry(sdfFunc)
-// ---------------------------------------------------------
-// V4 live-redraw hook: rebuild from any SDF function.
-// Call from index.html when user draws a new shape.
-// Returns the same object as buildCylinder — swap it in
-// and the solver picks up the new geometry on the next step.
-export function rebuildGeometry(sdfFunc) {
-  return buildGeometryFromSDF(sdfFunc);
-}
