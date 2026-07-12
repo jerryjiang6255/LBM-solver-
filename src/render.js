@@ -86,6 +86,7 @@ export function Renderer(displayCanvas) {
 Renderer.prototype.draw = function (fields, solid, rho, options, paintedNodes) {
   const mode      = (options && options.mode)      || 'speed';
   const autoScale = (options && options.autoScale) || false;
+  const showVectors  = (options && options.showVectors)  || false;  // ← add
   let   scale     = (options && options.scale)     || 0.2;
   const { ux, uy } = fields;
   const d = this.img.data;
@@ -163,6 +164,16 @@ Renderer.prototype.draw = function (fields, solid, rho, options, paintedNodes) {
   this.ctx.imageSmoothingEnabled = true;
   this.ctx.imageSmoothingQuality = 'high';
   this.ctx.drawImage(this.buf, 0, 0, this.W, this.H);
+
+
+  // ---- 8. Vector field overlay ----
+  if (showVectors && mode === 'speed') {
+    this.drawVectorField(fields.ux, fields.uy, solid, {
+      spacing: 8,
+      scale,
+      maxLen: 1.2,
+    });
+  }
 
 };
 // ---------------------------------------------------------
@@ -393,3 +404,108 @@ function nacaContour(params) {
 }
 
 
+
+
+// ---------------------------------------------------------
+// Renderer.prototype.drawVectorField(ux, uy, solid, options)
+// ---------------------------------------------------------
+// Draws velocity arrows on a coarse subgrid over the display
+// canvas. Arrows are scaled by local speed and colored white
+// with opacity proportional to magnitude so slow/recirculating
+// regions read as faint and fast regions read as bright.
+// Drawn on the display canvas (not the physics buffer) so
+// arrow geometry stays sharp at any zoom level.
+// Params:
+//   ux, uy  : Float32Array(N) velocity components
+//   solid   : Uint8Array(N)
+//   options : {
+//     spacing  : arrow grid spacing in lattice units (default 8)
+//     scale    : same colormap scale as draw() — used to
+//                normalize arrow length so the longest arrow
+//                fills ~1 grid cell at the max expected speed
+//     maxLen   : max arrow length as fraction of grid spacing
+//                in display pixels (default 0.85)
+//   }
+Renderer.prototype.drawVectorField = function (ux, uy, solid, options) {
+  const spacing = (options && options.spacing) || 8;
+  const scale   = (options && options.scale)   || 0.15;
+  const maxLen  = (options && options.maxLen)  || 0.85;
+
+  const ctx = this.ctx;
+  const W   = this.W;
+  const H   = this.H;
+
+  // Pixel size of one lattice cell on the display canvas
+  const cellW = W / NX;
+  const cellH = H / NY;
+
+  // Max arrow length in display pixels — one grid spacing × maxLen
+  const maxPx = Math.min(cellW, cellH) * spacing * maxLen;
+
+  ctx.save();
+  ctx.lineCap = 'round';
+
+  for (let gy = Math.floor(spacing / 2); gy < NY; gy += spacing) {
+    for (let gx = Math.floor(spacing / 2); gx < NX; gx += spacing) {
+      const n = gy * NX + gx;
+      if (solid[n]) continue;
+
+      const u = ux[n];
+      const v = uy[n];
+      const spd = Math.sqrt(u * u + v * v);
+      if (spd < 1e-6) continue;
+
+      // Normalized speed [0,1] relative to colormap scale
+      const t = Math.min(spd / scale, 1.0);
+
+      // Arrow length in display pixels — proportional to speed
+      const len = t * maxPx;
+
+      // Arrow direction in display space
+      // Note: uy positive = downward in screen coords (y increases downward)
+      const dx = (u / spd) * len;
+      const dy = (v / spd) * len;  // no flip needed — grid y=0 is top
+
+      // Arrow base position in display pixels
+      const px = (gx + 0.5) * cellW;
+      const py = (gy + 0.5) * cellH;
+
+      // Tip position
+      const tx = px + dx;
+      const ty = py + dy;
+
+      // Opacity scales with speed so near-zero vectors are invisible
+      const alpha = 0.25 + 0.75 * t;
+      ctx.strokeStyle = `rgba(255,255,255,${alpha.toFixed(2)})`;
+      ctx.lineWidth   = Math.max(0.8, cellW * 0.18);
+
+      // Shaft
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+
+      // Arrowhead — two short lines branching back from the tip
+      if (len > 3) {
+        const headLen   = Math.min(len * 0.38, cellW * 1.2);
+        const headAngle = Math.PI / 6; // 30 degrees
+        const angle     = Math.atan2(dy, dx);
+
+        ctx.beginPath();
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(
+          tx - headLen * Math.cos(angle - headAngle),
+          ty - headLen * Math.sin(angle - headAngle)
+        );
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(
+          tx - headLen * Math.cos(angle + headAngle),
+          ty - headLen * Math.sin(angle + headAngle)
+        );
+        ctx.stroke();
+      }
+    }
+  }
+
+  ctx.restore();
+};

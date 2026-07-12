@@ -63,8 +63,13 @@
           <span>Field</span>
           <select id="mode-select">
             <option value="speed">Speed</option>
-            <!-- <option value="vort">Vorticity</option> -->
+            <option value="vort">Vorticity</option>
           </select>
+        </label>
+
+        <label class="control">
+          <span>Velocity vectors</span>
+          <input type="checkbox" id="vector-toggle" />
         </label>
 
         <label class="control">
@@ -372,11 +377,17 @@ aoaSlider.addEventListener('input', () => {
     let sandboxActive = false;
     let sandboxMode   = 'draw';  
     let isDrawing     = false;
+    let showVectors = false;
 
     const sandboxToggle  = document.getElementById('sandbox-toggle');
     const sandboxModeRow = document.getElementById('sandbox-mode-row');
     const sandboxModeEl  = document.getElementById('sandbox-mode');
     const clearBtn       = document.getElementById('clear-drawing-btn');
+    const vectorToggle = document.getElementById('vector-toggle');
+
+    vectorToggle.addEventListener('change', () => {
+      showVectors = vectorToggle.checked;
+    });
 
     sandboxToggle.addEventListener('change', () => {
       sandboxActive = sandboxToggle.checked;
@@ -475,30 +486,20 @@ canvas.addEventListener('touchend', () => {
       lastTime = now;
       const instFps = dt > 0 ? 1000 / dt : 60;
       smoothedFps = fpsSmoothing * smoothedFps + (1 - fpsSmoothing) * instFps;
-
-
       if (running) {
         for (let s = 0; s < stepsPerFrame; s++) stepOnce();
       }
-
-
       renderer.draw(
         { ux, uy },
         solid,
         rho,
-        { mode: displayMode, scale: colorScale, autoScale: false },
-        paintedNodes   
+        { mode: displayMode, scale: colorScale, autoScale: false, showVectors },
+        paintedNodes
       );
-
-
       fpsValue.textContent = smoothedFps.toFixed(0);
       frameValue.textContent = frameCount.toString();
-
-
       requestAnimationFrame(tick);
     }
-
-
     requestAnimationFrame(tick);
   </script>
 </body>
