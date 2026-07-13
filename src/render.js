@@ -1,7 +1,7 @@
 // src/render.js  (V3)
 // ============================================================
 
-import { NX, NY, N } from "./lbm.js";
+import { NX, NY, N, f, Q } from "./lbm.js";
 
 // ---------------------------------------------------------
 // COLORMAP — cubic Hermite, 512 steps (kept from V2)
@@ -91,6 +91,10 @@ Renderer.prototype.draw = function (fields, solid, rho, options, paintedNodes) {
   const { ux, uy } = fields;
   const d = this.img.data;
 
+  const showGrid    = (options && options.showGrid)    || false;
+  const gridFine    = (options && options.gridFine     !== undefined) ? options.gridFine : true;
+  const showDist    = (options && options.showDist)    || false;
+
   // ---- 1. Pre-smooth velocity for vorticity only ----
   if (mode === 'vort') smoothVelocity(ux, uy, solid, 2);
 
@@ -172,6 +176,19 @@ Renderer.prototype.draw = function (fields, solid, rho, options, paintedNodes) {
       spacing: 8,
       scale,
       maxLen: 1.2,
+    });
+  }
+
+
+  // ---- 10. Grid + distribution overlay ----
+  if (showGrid) {
+    this.drawGrid(solid, {
+      showFine:    gridFine,
+      showCoarse:  true,
+      coarseStep:  8,
+      showDist:    showDist,
+      distSpacing: 16,
+      distScale:   48,
     });
   }
 
@@ -445,8 +462,8 @@ Renderer.prototype.drawVectorField = function (ux, uy, solid, options) {
   ctx.save();
   ctx.lineCap = 'round';
 
-  for (let gy = Math.floor(spacing / 2); gy < NY; gy += spacing) {
-    for (let gx = Math.floor(spacing / 2); gx < NX; gx += spacing) {
+    for (let gy = 0; gy < NY; gy += spacing) {
+      for (let gx = 0; gx < NX; gx += spacing) {
       const n = gy * NX + gx;
       if (solid[n]) continue;
 
@@ -467,8 +484,8 @@ Renderer.prototype.drawVectorField = function (ux, uy, solid, options) {
       const dy = (v / spd) * len;  // no flip needed — grid y=0 is top
 
       // Arrow base position in display pixels
-      const px = (gx + 0.5) * cellW;
-      const py = (gy + 0.5) * cellH;
+      const px = gx * cellW;
+      const py = gy * cellH;
 
       // Tip position
       const tx = px + dx;
@@ -503,6 +520,197 @@ Renderer.prototype.drawVectorField = function (ux, uy, solid, options) {
           ty - headLen * Math.sin(angle + headAngle)
         );
         ctx.stroke();
+      }
+    }
+  }
+
+  ctx.restore();
+};
+
+
+
+
+
+
+// ---------------------------------------------------------
+// Renderer.prototype.drawGrid(solid, options)
+// ---------------------------------------------------------
+// Draws the D2Q9 lattice grid as thin lines on the display
+// canvas. Two levels of detail:
+//   - Fine grid  : every lattice cell boundary (1px, faint)
+//   - Coarse grid: every `coarseStep` cells (slightly brighter)
+// Also optionally draws the f distribution arrows at sampled
+// nodes showing the 9 D2Q9 populations as line segments whose
+// length is proportional to f[n*Q+i], giving a direct visual
+// of the distribution function state at that node.
+// Params:
+//   solid   : Uint8Array(N)
+//   options : {
+//     showFine      : bool   — draw every cell boundary (default true)
+//     showCoarse    : bool   — draw coarser major gridlines (default true)
+//     coarseStep    : int    — major grid every N cells (default 8)
+//     showDist      : bool   — draw f distribution arrows (default false)
+//     distSpacing   : int    — sample f every N cells (default 16)
+//     distScale     : float  — scale factor for f arrow lengths
+//   }
+Renderer.prototype.drawGrid = function (solid, options) {
+  const showFine    = (options && options.showFine    !== undefined) ? options.showFine    : true;
+  const showCoarse  = (options && options.showCoarse  !== undefined) ? options.showCoarse  : true;
+  const coarseStep  = (options && options.coarseStep) || 8;
+  const showDist    = (options && options.showDist)   || false;
+  const distSpacing = (options && options.distSpacing)|| 16;
+  const distScale   = (options && options.distScale)  || 80;
+
+  const ctx  = this.ctx;
+  const W    = this.W;
+  const H    = this.H;
+  const cellW = W / NX;
+  const cellH = H / NY;
+
+  ctx.save();
+
+  // ---- Fine grid: every lattice cell ----
+  if (showFine) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth   = 0.5;
+    ctx.beginPath();
+
+    // Vertical lines
+    for (let x = 0; x <= NX; x++) {
+      const px = x * cellW;
+      ctx.moveTo(px, 0);
+      ctx.lineTo(px, H);
+    }
+    // Horizontal lines
+    for (let y = 0; y <= NY; y++) {
+      const py = y * cellH;
+      ctx.moveTo(0, py);
+      ctx.lineTo(W, py);
+    }
+    ctx.stroke();
+  }
+
+  // ---- Coarse grid: every coarseStep cells ----
+  if (showCoarse) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth   = 0.75;
+    ctx.beginPath();
+
+    for (let x = 0; x <= NX; x += coarseStep) {
+      const px = x * cellW;
+      ctx.moveTo(px, 0);
+      ctx.lineTo(px, H);
+    }
+    for (let y = 0; y <= NY; y += coarseStep) {
+      const py = y * cellH;
+      ctx.moveTo(0, py);
+      ctx.lineTo(W, py);
+    }
+    ctx.stroke();
+  }
+
+  // ---- Distribution function arrows at sampled nodes ----
+  // For each sampled fluid node, draws 9 line segments — one per
+  // D2Q9 direction — with length proportional to f[n*Q+i].
+  // The rest direction (i=0) is shown as a dot at the node center.
+  // This gives a direct visual of the microscopic state: you can
+  // see how the distribution is skewed toward the flow direction
+  // (more mass in directions aligned with ux/uy) and how it
+  // deviates from equilibrium near the obstacle.
+  if (showDist) {
+    // D2Q9 velocity vectors, same order as lbm.js CX/CY
+    const CX_D = [ 0,  1,  0, -1,  0,  1, -1, -1,  1];
+    const CY_D = [ 0,  0, -1,  0,  1, -1, -1,  1,  1]; 
+
+    // Equilibrium weights for visual reference baseline
+    // (direction thickness scales with how far f deviates from W[i])
+    const W_D  = [4/9, 1/9, 1/9, 1/9, 1/9, 1/36, 1/36, 1/36, 1/36];
+
+    // Color per direction group:
+    //   rest     : white
+    //   axis     : cyan
+    //   diagonal : yellow
+    const DIR_COLORS = [
+      'rgba(255,255,255,0.9)',  // 0 rest
+      'rgba(100,220,255,0.85)', // 1 E
+      'rgba(100,220,255,0.85)', // 2 N
+      'rgba(100,220,255,0.85)', // 3 W
+      'rgba(100,220,255,0.85)', // 4 S
+      'rgba(255,220,80,0.8)',   // 5 NE
+      'rgba(255,220,80,0.8)',   // 6 NW
+      'rgba(255,220,80,0.8)',   // 7 SW
+      'rgba(255,220,80,0.8)',   // 8 SE
+    ];
+
+    ctx.lineWidth = Math.max(0.6, cellW * 0.12);
+    ctx.lineCap   = 'round';
+
+    for (let gy = 0; gy < NY; gy += distSpacing) {
+      for (let gx = 0; gx < NX; gx += distSpacing) {
+        const n = gy * NX + gx;
+        if (solid[n]) continue;
+
+        // Node center in display pixels
+        const px = gx * cellW;
+        const py = gy * cellH;
+
+        // Draw a small dot at the node center
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.beginPath();
+        ctx.arc(px, py, Math.max(1, cellW * 0.15), 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw each of the 9 direction arms
+        for (let i = 0; i < 9; i++) {
+          const fi = f[n * Q + i];
+
+          // Arrow length: fi * distScale in display pixels
+          // Scaled by cell size so it looks reasonable at any zoom
+          const armLen = fi * distScale * Math.min(cellW, cellH);
+
+          if (i === 0) {
+            // Rest direction — draw a circle whose radius ~ f0
+            // so you can see how much mass is "resting"
+            const r = Math.min(armLen * 0.5, cellW * 0.4);
+            if (r > 0.5) {
+              ctx.strokeStyle = DIR_COLORS[0];
+              ctx.beginPath();
+              ctx.arc(px, py, r, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+            continue;
+          }
+
+          // Moving direction — draw a line from node center
+          // in the lattice direction, length proportional to fi
+          const ex = px + CX_D[i] * armLen;
+          const ey = py + CY_D[i] * armLen;
+
+          ctx.strokeStyle = DIR_COLORS[0];
+          ctx.beginPath();
+          ctx.moveTo(px, py);
+          ctx.lineTo(ex, ey);
+          ctx.stroke();
+
+          // Small arrowhead at tip if arm is long enough
+          if (armLen > cellW * 0.4) {
+            const angle   = Math.atan2(CY_D[i], CX_D[i]);
+            const headLen = armLen * 0.3;
+            const headAng = Math.PI / 5;
+            ctx.beginPath();
+            ctx.moveTo(ex, ey);
+            ctx.lineTo(
+              ex - headLen * Math.cos(angle - headAng),
+              ey - headLen * Math.sin(angle - headAng)
+            );
+            ctx.moveTo(ex, ey);
+            ctx.lineTo(
+              ex - headLen * Math.cos(angle + headAng),
+              ey - headLen * Math.sin(angle + headAng)
+            );
+            ctx.stroke();
+          }
+        }
       }
     }
   }

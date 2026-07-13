@@ -1,176 +1,222 @@
 <!DOCTYPE html>
-<!-- ============================================================
-     index.html (V2)
-     ============================================================ -->
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>V4 LBM Flow Visualizer</title>
+  <title>V5 LBM Flow Visualizer</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="app">
+
     <header class="app-header">
-      <h1>Lattice Boltzmann Flow Visualizer <span class="tag">V4</span></h1>
-      <p class="subtitle">
-        D2Q9 · TRT collision · Smagorinsky LES · log-law wall model · BFL boundary
-      </p>
+      <h1>Lattice Boltzmann Flow Visualizer
+      <span class="tag tooltip-trigger" data-tip="V5 features: TRT two-relaxation-time collision, Smagorinsky LES eddy viscosity, BFL interpolated boundary with SDF q values, hard Dirichlet inlet reset, zero-gradient outlet copy, far-field Dirichlet top/bottom walls, user-drawn sandbox walls with real-time flow interaction.">V5</span>      </h1>
+      <span class="subtitle">
+        <span class="tooltip-trigger" data-tip="D2Q9: 2-dimensional, 9-velocity lattice. Each node stores 9 distribution functions representing particle populations moving in 8 directions plus rest.">D2Q9</span>
+        <span class="subtitle-sep"> · </span>
+        <span class="tooltip-trigger" data-tip="TRT (Two-Relaxation-Time): collision operator with two rates — omega+ controls physical viscosity, omega- controls numerical stability via the Magic Parameter Λ=3/16. More accurate than BGK near boundaries.">TRT</span>
+        <span class="subtitle-sep"> · </span>
+        <span class="tooltip-trigger" data-tip="Smagorinsky LES: Large Eddy Simulation turbulence model. Adds eddy viscosity νt = (Cs·Δ)²·|S| to the base viscosity, damping sub-grid turbulent fluctuations without resolving them explicitly.">Smagorinsky LES</span>
+        <span class="subtitle-sep"> · </span>
+        <span class="tooltip-trigger" data-tip="BFL (Bouzidi-Firdaouss-Lallemand): interpolated bounce-back boundary condition. Uses the fractional wall distance q from the SDF to reconstruct distributions with sub-lattice accuracy, eliminating the half-node position error of plain bounce-back.">BFL boundary</span>
+      </span>
+      <a class="credit" href="https://www.linkedin.com/in/jerry-jiang-a38127285/" target="_blank" rel="noopener noreferrer">
+        Built by <span class="credit-name">Jerry Jiang</span>
+      </a>
     </header>
+
+    <div class="tooltip" id="tooltip" role="tooltip"></div>
+
+
     <main class="app-main">
 
-     <div style="position:relative; flex:1; min-width:0;">
-  <canvas id="flow-canvas" style="display:block; width:100%; height:auto;"></canvas>
-  <canvas id="body-canvas" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></canvas>
-  <canvas id="wall-canvas" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></canvas>
-</div>
+      <!-- ── TOP CONTROL PANEL ── -->
+      <div class="hud">
 
-      <aside class="hud">
-        <h2>Inlet Flow</h2>
-
-        <label class="control">
-          <span>Inlet velocity (u0)</span>
-          <input type="range" id="u0-slider" min="0.02" max="1" step="0.005" value="0.2" />
-          <output id="u0-value">0.20</output>
-        </label>
-
-        
-        <label class="control">
-          <span>Reynolds number (Re)</span>
-          <input type="range" id="re-slider" min="20" max="2000" step="10" value="200" />
-          <output id="re-value">200</output>
-        </label>
-
-        <h2>Display</h2>
-
-        <label class="control">
-          <span>Body</span>
-          <select id="body-select">
-            <option value="cylinder">Cylinder</option>
-            <option value="airfoil">NACA 0012</option>
-            <option value="empty">Empty</option>
-            <option value="blocks">Block matrix</option>
-          </select>
-        </label>
-
-        <label class="control" id="aoa-row" style="display:none">
-          <span>Angle of attack (°)</span>
-          <input type="range" id="aoa-slider" min="-20" max="20" step="0.5" value="0" />
-          <output id="aoa-value">0.0</output>
-        </label>
-
-        <label class="control">
-          <span>Field</span>
-          <select id="mode-select">
-            <option value="speed">Speed</option>
-            <option value="vort">Vorticity</option>
-          </select>
-        </label>
-
-        <label class="control">
-          <span>Velocity vectors</span>
-          <input type="checkbox" id="vector-toggle" />
-        </label>
-
-        <label class="control">
-          <span>Colormap scale</span>
-          <input type="range" id="scale-slider" min="0.02" max="1.0" step="0.005" value="0.4" />
-          <output id="scale-value">0.4</output>
-        </label>
-
-        <label class="control">
-          <span>Sim speed (steps/frame)</span>
-          <input type="range" id="steps-slider" min="1" max="20" step="1" value="10" />
-          <output id="steps-value">10</output>
-        </label>
-
-        <h2>Sandbox</h2>
-
-        <label class="control">
-          <span>Draw walls</span>
-          <input type="checkbox" id="sandbox-toggle" />
-        </label>
-
-        <label class="control" id="sandbox-mode-row" style="display:none">
-          <span>Mode</span>
-          <select id="sandbox-mode">
-            <option value="draw">Draw</option>
-            <option value="erase">Erase</option>
-          </select>
-        </label>
-
-        <button id="clear-drawing-btn" type="button" style="display:none">
-          Clear drawing
-        </button>
-
-        <div class="buttons">
-          <button id="pause-btn" type="button">Pause</button>
-          <button id="reset-btn" type="button">Reset</button>
+        <!-- 1. SANDBOX -->
+        <div class="ctrl-group">
+          <div class="group-label">Sandbox</div>
+          <div class="btn-grid">
+            <button class="btn" id="sandbox-btn">Sandbox</button>
+          </div>
         </div>
 
-        <div class="stats">
-          <div><span>FPS</span><output id="fps-value">--</output></div>
-          <div><span>Frame</span><output id="frame-value">0</output></div>
+        <!-- 2. BODY — reordered: NACA, Blocks, Cylinder, Empty -->
+        <div class="ctrl-group">
+          <div class="group-label">Body</div>
+          <div class="btn-grid">
+            <button class="btn active" id="body-airfoil">NACA 0012</button>
+            <button class="btn"        id="body-blocks">Blocks</button>
+            <button class="btn"        id="body-cylinder">Cylinder</button>
+            <button class="btn"        id="body-empty">Empty</button>
+          </div>
+          <div class="slider-row" id="aoa-row" style="display:none">
+            <label>
+              <span>Angle of attack</span>
+              <output id="aoa-value">10.0°</output>
+            </label>
+            <input type="range" id="aoa-slider" min="-20" max="20" step="0.5" value="10" />
+          </div>
         </div>
 
-        <p id="app-error" class="error" role="alert"></p>
+        <!-- 3. FLOW -->
+        <div class="ctrl-group">
+          <div class="group-label">Flow</div>
+          <div class="slider-row">
+            <label>
+              <span>Inlet velocity</span>
+              <output id="u0-value">0.500</output>
+            </label>
+            <input type="range" id="u0-slider" min="0.02" max="1" step="0.005" value="0.5" />
+          </div>
+          <div class="slider-row">
+            <label>
+              <span>Reynolds number</span>
+              <output id="re-value">1000</output>
+            </label>
+            <input type="range" id="re-slider" min="20" max="2000" step="10" value="1000" />
+          </div>
+        </div>
 
-        <p class="hint">
-          Blue = low, red = high. Gray disk = cylinder. Raising Re
-          too far or u0 too high can destabilize MRT — reduce u0
-          first if the field goes blank/NaN.
-        </p>
-      </aside>
+        <!-- 4. DISPLAY — color scale removed, moved to controls -->
+        <div class="ctrl-group">
+          <div class="group-label">Display</div>
+          <div class="btn-grid">
+            <button class="btn active" id="mode-speed">Speed</button>
+            <button class="btn"        id="mode-vort">Vorticity</button>
+          </div>
+          <div class="btn-grid">
+            <button class="btn" id="vector-btn">Vectors</button>
+            <button class="btn" id="dist-btn">Distribution</button>
+          </div>
+        </div>
+
+        <!-- 5. CONTROLS — color scale added here -->
+        <div class="ctrl-group">
+          <div class="group-label">Controls</div>
+          <div class="slider-row">
+            <label>
+              <span>Color scale</span>
+              <output id="scale-value">0.500</output>
+            </label>
+            <input type="range" id="scale-slider" min="0.02" max="1.0" step="0.005" value="0.5" />
+          </div>
+          <div class="btn-grid">
+            <button class="btn"        id="pause-btn">Pause</button>
+            <button class="btn danger" id="clear-btn">Clear</button>
+            <button class="btn danger" id="reset-btn">Reset</button>
+          </div>
+        </div>
+
+        <!-- 6. STATS — sim speed added here -->
+        <div class="ctrl-group">
+          <div class="group-label">Stats</div>
+          <div class="slider-row">
+            <label>
+              <span>Sim speed</span>
+              <output id="steps-value">10</output>
+            </label>
+            <input type="range" id="steps-slider" min="1" max="20" step="1" value="10" />
+          </div>
+          <div class="stats">
+            <div class="stat">
+              <span class="stat-label">FPS</span>
+              <output class="stat-value" id="fps-value">--</output>
+            </div>
+            <div class="stat">
+              <span class="stat-label">Frame</span>
+              <output class="stat-value" id="frame-value">0</output>
+            </div>
+          </div>
+        </div>
+
+        <!-- 7. SIM INFO -->
+        <div class="ctrl-group">
+          <div class="group-label">Sim Info</div>
+          <div class="stat">
+            <span class="stat-label">Grid</span>
+            <output class="stat-value" id="grid-value" style="font-size:0.75rem">256×128</output>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Nodes</span>
+            <output class="stat-value" id="nodes-value" style="font-size:0.75rem">32,768</output>
+          </div>
+        </div>
+
+        <p class="error" id="app-error" role="alert"></p>
+
+      </div><!-- /.hud -->
+
+      <!-- ── CANVAS STACK — separate block with gap above ── -->
+      <div class="canvas-wrap">
+        <canvas id="flow-canvas"></canvas>
+        <canvas id="body-canvas"></canvas>
+        <canvas id="wall-canvas"></canvas>
+      </div>
 
     </main>
 
+    <footer class="footer">
+      <p>
+        Educational use only. This simulator demonstrates the power of the
+        Lattice Boltzmann Method (LBM) as an alternative to traditional Navier-Stokes CFD solvers.
+        Unlike conventional CFD, LBM models fluid behaviour through particle distribution functions
+        on a discrete lattice — collision and streaming steps replace the complex pressure-velocity
+        coupling of Navier-Stokes. This makes LBM naturally parallel, highly efficient, and
+        remarkably capable of handling complex geometries without the need for mesh generation or
+        remeshing — as demonstrated by the sandbox drawing feature, where arbitrary walls can be
+        placed in real time and the flow adapts instantly without any restart or remesh. The solver
+        here uses a D2Q9 lattice with TRT collision, Smagorinsky LES turbulence modelling, BFL
+        interpolated boundary conditions, and SDF-based geometry. Any feedback or advice is greatly
+        appreciated.
+      </p>
+    </footer>
   </div>
-
 
   <script>
     const errEl = () => document.getElementById('app-error');
-    window.addEventListener('error', (e) => {
+    window.addEventListener('error', e => {
       errEl().textContent = 'Error: ' + (e.message || e.error) +
         (e.filename ? ` (${e.filename}:${e.lineno})` : '');
     });
-    window.addEventListener('unhandledrejection', (e) => {
-      errEl().textContent = 'Unhandled promise rejection: ' + (e.reason?.message || e.reason);
+    window.addEventListener('unhandledrejection', e => {
+      errEl().textContent = 'Unhandled rejection: ' + (e.reason?.message || e.reason);
     });
   </script>
 
-
   <script type="module">
-import {
-  NX, NY, N, Q, f, rho, ux, uy, W,  
-  initField,
-  setReynolds,
-} from "./src/lbm.js";
-    import { buildCylinder, defaultCylinder, buildAirfoil,
-         buildEmpty, defaultBlockMatrix } from "./src/geometry.js";
-    import { collideFused } from "./src/collisionFused.js";
-    import { stream } from "./src/streaming.js";
+    import {
+      NX, NY, N, Q, f, rho, ux, uy, W,
+      initField, setReynolds,
+    } from "./src/lbm.js";
+    import {
+      buildCylinder, defaultCylinder, buildAirfoil,
+      buildEmpty, defaultBlockMatrix
+    } from "./src/geometry.js";
+    import { collideFused }            from "./src/collisionFused.js";
+    import { stream }                  from "./src/streaming.js";
     import { applyBoundaryConditions } from "./src/boundary.js";
     import { Renderer, setBodyCanvas, drawBodyVector } from "./src/render.js";
-    import { paintBrush, clearDrawing, beginStroke, paintStroke, 
-            endStroke, paintedNodes, setWallCanvas, redrawWalls } from "./src/userDraw.js";
+    import {
+      clearDrawing, beginStroke, paintStroke,
+      endStroke, paintedNodes, setWallCanvas, redrawWalls
+    } from "./src/userDraw.js";
 
-    // ---------------------------------------------------------
-    // GEOMETRY (built once; fixed cylinder for V2)
-    // ---------------------------------------------------------
-    const cx = Math.floor(NX / 4);
-    const cy = Math.floor(NY / 2);
+    // ── GEOMETRY STATE ──────────────────────────────────────
+    const cx     = Math.floor(NX / 4);
+    const cy     = Math.floor(NY / 2);
     const radius = Math.max(4, Math.floor(NY / 8));
 
-
     let solid, wallDist, wallAdjacent, solidList, fluidSurfaceList, linkMask, linkQ;
-    let bodyType  = 'cylinder';   
-    let aoaDeg    = 0;            
+    let bodyType = 'airfoil';
+    document.getElementById('aoa-row').style.display = '';  // show on load
+    let aoaDeg   = 10;
     let solidBase;
 
-    const canvas = document.getElementById("flow-canvas");
-    const renderer = new Renderer(canvas);
-
-
+    // ── CANVAS SETUP ────────────────────────────────────────
+    const canvas     = document.getElementById('flow-canvas');
+    const renderer   = new Renderer(canvas);
     const bodyCanvas = document.getElementById('body-canvas');
     bodyCanvas.width  = renderer.W;
     bodyCanvas.height = renderer.H;
@@ -181,111 +227,71 @@ import {
     wallCanvas.height = renderer.H;
     setWallCanvas(wallCanvas);
 
-    function buildGeometry() {
-      let g, bodyParams;
-        if (bodyType === 'airfoil') {
-          const chord = Math.floor(NX / 3);
-          const acx   = Math.floor(NX / 3);
-          const acy   = Math.floor(NY / 2);
-          const alpha = aoaDeg * Math.PI / 180;
-          g          = buildAirfoil(acx, acy, chord, alpha);
-          bodyParams = { type: 'airfoil', cx: acx, cy: acy, chord, alpha };
+    // ── GEOMETRY BUILDERS ───────────────────────────────────
+    function resolveGeometry() {
+      if (bodyType === 'airfoil') {
+        const chord = Math.floor(NX / 3);
+        const acx   = Math.floor(NX / 3);
+        const acy   = Math.floor(NY / 2);
+        const alpha = aoaDeg * Math.PI / 180;
+        return {
+          g: buildAirfoil(acx, acy, chord, alpha),
+          p: { type:'airfoil', cx:acx, cy:acy, chord, alpha }
+        };
+      } else if (bodyType === 'empty') {
+        return { g: buildEmpty(), p: { type:'empty' } };
+      } else if (bodyType === 'blocks') {
+        const r = defaultBlockMatrix();
+        return { g: r.geometry, p: { type:'blocks', blocks:r.blocks, blockSize:r.blockSize } };
+      } else {
+        return { g: defaultCylinder(), p: { type:'cylinder', cx, cy, radius } };
+      }
+    }
 
-        } else if (bodyType === 'empty') {
-          g          = buildEmpty();
-          bodyParams = { type: 'empty' };
-
-        } else if (bodyType === 'blocks') {
-            const result   = defaultBlockMatrix();
-            g              = result.geometry;
-            bodyParams     = { type: 'blocks', blocks: result.blocks, blockSize: result.blockSize };
-
-        } else {
-          g          = defaultCylinder();
-          bodyParams = { type: 'cylinder', cx, cy, radius };
-        }
-
-        solidBase        = g.solid;
-        solid            = new Uint8Array(g.solid);
-        wallDist         = g.wallDist;
-        wallAdjacent     = g.wallAdjacent;
-        linkMask         = g.linkMask;
-        linkQ            = g.linkQ;
-        solidList        = g.solidList;
-        fluidSurfaceList = g.fluidSurfaceList;
-
-        const bCtx = document.getElementById('body-canvas').getContext('2d');
-        bCtx.clearRect(0, 0, bCtx.canvas.width, bCtx.canvas.height);
-
-        if (bodyType !== 'empty') {
-          drawBodyVector(bodyParams);
-        }
-
+    function applyGeometry({ g, p }) {
+      solidBase        = g.solid;
+      solid            = new Uint8Array(g.solid);
+      wallDist         = g.wallDist;
+      wallAdjacent     = g.wallAdjacent;
+      linkMask         = g.linkMask;
+      linkQ            = g.linkQ;
+      solidList        = g.solidList;
+      fluidSurfaceList = g.fluidSurfaceList;
+      const bCtx = bodyCanvas.getContext('2d');
+      bCtx.clearRect(0, 0, bCtx.canvas.width, bCtx.canvas.height);
+      if (bodyType !== 'empty') drawBodyVector(p);
       redrawWalls();
     }
 
-function rebuildGeometryOnly() {
-  clearDrawing(solid, solidBase);  
+    function buildGeometry() { applyGeometry(resolveGeometry()); }
 
-  let g, bodyParams;
+    function rebuildGeometryOnly() {
+      clearDrawing(solid, solidBase);
+      const res = resolveGeometry();
+      applyGeometry(res);
+      for (let n = 0; n < N; n++) {
+        if (!solid[n]) continue;
+        const base = n * Q;
+        for (let i = 0; i < Q; i++) f[base + i] = W[i];
+      }
+    }
 
-    if (bodyType === 'airfoil') {
-    const chord = Math.floor(NX / 3);
-    const acx   = Math.floor(NX / 3);
-    const acy   = Math.floor(NY / 2);
-    const alpha = aoaDeg * Math.PI / 180;
-    g          = buildAirfoil(acx, acy, chord, alpha);
-    bodyParams = { type: 'airfoil', cx: acx, cy: acy, chord, alpha };
+    // ── SIM STATE ───────────────────────────────────────────
+    let u0            = parseFloat(document.getElementById('u0-slider').value);
+    let reynolds      = parseFloat(document.getElementById('re-slider').value);
+    let displayMode   = 'speed';
+    let colorScale    = parseFloat(document.getElementById('scale-slider').value);
+    let stepsPerFrame = parseInt(document.getElementById('steps-slider').value, 10);
+    let running       = true;
+    let frameCount    = 0;
+    let showVectors   = false;
+    let showGrid      = false;
+    let gridFine      = true;
+    let showDist      = false;
+    let sandboxActive = false;
+    let sandboxMode   = 'draw';
+    let isDrawing     = false;
 
-  } else if (bodyType === 'empty') {
-    g          = buildEmpty();
-    bodyParams = { type: 'empty' };
-
-  } else if (bodyType === 'blocks') {
-    const result   = defaultBlockMatrix();
-    g              = result.geometry;
-    bodyParams     = { type: 'blocks', blocks: result.blocks, blockSize: result.blockSize };
-
-  } else {
-    g          = defaultCylinder();
-    bodyParams = { type: 'cylinder', cx, cy, radius };
-  }
-
-  solidBase        = g.solid;
-  solid            = new Uint8Array(g.solid);
-  wallDist         = g.wallDist;
-  wallAdjacent     = g.wallAdjacent;
-  linkMask         = g.linkMask;
-  linkQ            = g.linkQ;
-  solidList        = g.solidList;
-  fluidSurfaceList = g.fluidSurfaceList;
-
-  for (let n = 0; n < N; n++) {
-    if (!solid[n]) continue;
-    const base = n * Q;
-    for (let i = 0; i < Q; i++) f[base + i] = W[i];
-  }
-
-  const bCtx = document.getElementById('body-canvas').getContext('2d');
-  bCtx.clearRect(0, 0, bCtx.canvas.width, bCtx.canvas.height);
-  drawBodyVector(bodyParams);
-  redrawWalls();  
-
-}
-    // ---------------------------------------------------------
-    // SIMULATION STATE
-    // ---------------------------------------------------------
-    let u0 = parseFloat(document.getElementById("u0-slider").value);
-    let reynolds = parseFloat(document.getElementById("re-slider").value);
-    let displayMode = document.getElementById("mode-select").value;
-    let colorScale = parseFloat(document.getElementById("scale-slider").value);
-    let stepsPerFrame = parseInt(document.getElementById("steps-slider").value, 10);
-    let running = true;
-    let frameCount = 0;
-
-    // ---------------------------------------------------------
-    // resetSim()
-    // ---------------------------------------------------------
     function resetSim() {
       clearDrawing(solid, solidBase);
       buildGeometry();
@@ -297,178 +303,146 @@ function rebuildGeometryOnly() {
 
     resetSim();
 
-    // ---------------------------------------------------------
-    // UI WIRING
-    // ---------------------------------------------------------
-    const u0Slider = document.getElementById("u0-slider");
-    const u0Value = document.getElementById("u0-value");
-    u0Slider.addEventListener("input", () => {
-      u0 = parseFloat(u0Slider.value);
-      u0Value.textContent = u0.toFixed(3);
+    // ── HELPER ──────────────────────────────────────────────
+    function setActiveBtn(ids, activeId) {
+      ids.forEach(id => document.getElementById(id).classList.remove('active'));
+      document.getElementById(activeId).classList.add('active');
+    }
+
+    // ── FLOW ────────────────────────────────────────────────
+    document.getElementById('u0-slider').addEventListener('input', e => {
+      u0 = parseFloat(e.target.value);
+      document.getElementById('u0-value').textContent = u0.toFixed(3);
+    });
+    document.getElementById('re-slider').addEventListener('input', e => {
+      reynolds = parseFloat(e.target.value);
+      document.getElementById('re-value').textContent = reynolds.toFixed(0);
+      setReynolds(reynolds);
+    });
+    document.getElementById('steps-slider').addEventListener('input', e => {
+      stepsPerFrame = parseInt(e.target.value, 10);
+      document.getElementById('steps-value').textContent = stepsPerFrame;
+    });
+    document.getElementById('scale-slider').addEventListener('input', e => {
+      colorScale = parseFloat(e.target.value);
+      document.getElementById('scale-value').textContent = colorScale.toFixed(3);
     });
 
-    const reSlider = document.getElementById("re-slider");
-    const reValue = document.getElementById("re-value");
-    reSlider.addEventListener("input", () => {
-      reynolds = parseFloat(reSlider.value);
-      reValue.textContent = reynolds.toFixed(0);
-      setReynolds(reynolds); 
+    // ── FIELD MODE ───────────────────────────────────────────
+    const modeGroup = ['mode-speed','mode-vort'];
+    document.getElementById('mode-speed').addEventListener('click', () => {
+      displayMode = 'speed'; setActiveBtn(modeGroup, 'mode-speed');
+    });
+    document.getElementById('mode-vort').addEventListener('click', () => {
+      displayMode = 'vort'; setActiveBtn(modeGroup, 'mode-vort');
     });
 
-
-    const modeSelect = document.getElementById("mode-select");
-    modeSelect.addEventListener("change", () => {
-      displayMode = modeSelect.value;
+    // ── OVERLAYS ─────────────────────────────────────────────
+    document.getElementById('vector-btn').addEventListener('click', () => {
+      showVectors = !showVectors;
+      document.getElementById('vector-btn').classList.toggle('active', showVectors);
+    });
+    document.getElementById('dist-btn').addEventListener('click', () => {
+      const on = !showGrid;
+      showGrid = on; gridFine = on; showDist = on;
+      document.getElementById('dist-btn').classList.toggle('active', on);
     });
 
+    // ── BODY ─────────────────────────────────────────────────
+    const bodyGroup = ['body-airfoil','body-blocks','body-cylinder','body-empty'];
+    const aoaRow    = document.getElementById('aoa-row');
 
-    const scaleSlider = document.getElementById("scale-slider");
-    const scaleValue = document.getElementById("scale-value");
-    scaleSlider.addEventListener("input", () => {
-      colorScale = parseFloat(scaleSlider.value);
-      scaleValue.textContent = colorScale.toFixed(3);
+    function switchBody(type, btnId) {
+      bodyType = type;
+      setActiveBtn(bodyGroup, btnId);
+      aoaRow.style.display = type === 'airfoil' ? '' : 'none';
+      rebuildGeometryOnly();
+    }
+
+    document.getElementById('body-cylinder').addEventListener('click', () => switchBody('cylinder','body-cylinder'));
+    document.getElementById('body-airfoil' ).addEventListener('click', () => switchBody('airfoil', 'body-airfoil'));
+    document.getElementById('body-blocks'  ).addEventListener('click', () => switchBody('blocks',  'body-blocks'));
+    document.getElementById('body-empty'   ).addEventListener('click', () => switchBody('empty',   'body-empty'));
+
+    document.getElementById('aoa-slider').addEventListener('input', e => {
+      aoaDeg = parseFloat(e.target.value);
+      document.getElementById('aoa-value').textContent = aoaDeg.toFixed(1) + '°';
+      rebuildGeometryOnly();
     });
 
+    // ── SANDBOX ──────────────────────────────────────────────
+    const sandboxBtn = document.getElementById('sandbox-btn');
+    const clearBtn   = document.getElementById('clear-btn');
 
-    const stepsSlider = document.getElementById("steps-slider");
-    const stepsValue = document.getElementById("steps-value");
-    stepsSlider.addEventListener("input", () => {
-      stepsPerFrame = parseInt(stepsSlider.value, 10);
-      stepsValue.textContent = stepsSlider.value;
+    sandboxBtn.addEventListener('click', () => {
+      sandboxActive = !sandboxActive;
+      sandboxBtn.classList.toggle('active', sandboxActive);
+      canvas.style.cursor = sandboxActive ? 'crosshair' : 'default';
     });
 
+    clearBtn.addEventListener('click', () => {
+      clearDrawing(solid, solidBase);
+      redrawWalls();
+    });
 
-    const pauseBtn = document.getElementById("pause-btn");
-    pauseBtn.addEventListener("click", () => {
+    // ── CONTROLS ─────────────────────────────────────────────
+    const pauseBtn = document.getElementById('pause-btn');
+    pauseBtn.addEventListener('click', () => {
       running = !running;
-      pauseBtn.textContent = running ? "Pause" : "Resume";
+      pauseBtn.textContent = running ? 'Pause' : 'Resume';
+      pauseBtn.classList.toggle('active', !running);
     });
+    document.getElementById('reset-btn').addEventListener('click', resetSim);
 
-
-    const resetBtn = document.getElementById("reset-btn");
-    resetBtn.addEventListener("click", resetSim);
-
-
-    const fpsValue = document.getElementById("fps-value");
-    const frameValue = document.getElementById("frame-value");
-
-
-
-    const bodySelect = document.getElementById('body-select');
-    const aoaRow     = document.getElementById('aoa-row');
-    const aoaSlider  = document.getElementById('aoa-slider');
-    const aoaValue   = document.getElementById('aoa-value');
-
-bodySelect.addEventListener('change', () => {
-  bodyType = bodySelect.value;
-  aoaRow.style.display = bodyType === 'airfoil' ? '' : 'none';
-  rebuildGeometryOnly();
-});
-
-aoaSlider.addEventListener('input', () => {
-  aoaDeg = parseFloat(aoaSlider.value);
-  aoaValue.textContent = aoaDeg.toFixed(1);
-  rebuildGeometryOnly(); 
-});
-
-    // ---------------------------------------------------------
-    // SANDBOX WIRING
-    // ---------------------------------------------------------
-    let sandboxActive = false;
-    let sandboxMode   = 'draw';  
-    let isDrawing     = false;
-    let showVectors = false;
-
-    const sandboxToggle  = document.getElementById('sandbox-toggle');
-    const sandboxModeRow = document.getElementById('sandbox-mode-row');
-    const sandboxModeEl  = document.getElementById('sandbox-mode');
-    const clearBtn       = document.getElementById('clear-drawing-btn');
-    const vectorToggle = document.getElementById('vector-toggle');
-
-    vectorToggle.addEventListener('change', () => {
-      showVectors = vectorToggle.checked;
-    });
-
-    sandboxToggle.addEventListener('change', () => {
-      sandboxActive = sandboxToggle.checked;
-      sandboxModeRow.style.display = sandboxActive ? '' : 'none';
-      clearBtn.style.display       = sandboxActive ? '' : 'none';
-      canvas.style.cursor          = sandboxActive ? 'crosshair' : 'default';
-    });
-
-    sandboxModeEl.addEventListener('change', () => {
-      sandboxMode = sandboxModeEl.value;
-    });
-
-  clearBtn.addEventListener('click', () => {
-  clearDrawing(solid, solidBase);
-  redrawWalls();
-});
-
+    // ── CANVAS INPUT ─────────────────────────────────────────
     function canvasToLattice(clientX, clientY) {
       const rect = canvas.getBoundingClientRect();
       return {
-        lx: (clientX - rect.left)  * (NX / rect.width),
-        ly: (clientY - rect.top)   * (NY / rect.height),
+        lx: (clientX - rect.left) * (NX / rect.width),
+        ly: (clientY - rect.top)  * (NY / rect.height),
       };
     }
 
-    canvas.addEventListener('mousedown', (e) => {
+    canvas.addEventListener('mousedown', e => {
       if (!sandboxActive || e.button !== 0) return;
       isDrawing = true;
       const { lx, ly } = canvasToLattice(e.clientX, e.clientY);
       beginStroke(lx, ly);
       paintStroke(lx, ly, solid, sandboxMode);
-      redrawWalls();   // ← ADD THIS
+      redrawWalls();
     });
-
-    canvas.addEventListener('mousemove', (e) => {
+    canvas.addEventListener('mousemove', e => {
       if (!sandboxActive || !isDrawing) return;
       const { lx, ly } = canvasToLattice(e.clientX, e.clientY);
       paintStroke(lx, ly, solid, sandboxMode);
-      redrawWalls();   // ← ADD THIS
+      redrawWalls();
     });
-
-canvas.addEventListener('mouseup', () => {
-  isDrawing = false;
-  endStroke(sandboxMode);  
-  redrawWalls();          
-});
-
-canvas.addEventListener('mouseleave', () => {
-  isDrawing = false;
-  endStroke(sandboxMode);
-  redrawWalls();
-});
-
-    canvas.addEventListener('touchstart', (e) => {
+    canvas.addEventListener('mouseup', () => {
+      isDrawing = false; endStroke(sandboxMode); redrawWalls();
+    });
+    canvas.addEventListener('mouseleave', () => {
+      isDrawing = false; endStroke(sandboxMode); redrawWalls();
+    });
+    canvas.addEventListener('touchstart', e => {
       if (!sandboxActive) return;
-      e.preventDefault();
-      isDrawing = true;
+      e.preventDefault(); isDrawing = true;
       const { lx, ly } = canvasToLattice(e.touches[0].clientX, e.touches[0].clientY);
       beginStroke(lx, ly);
       paintStroke(lx, ly, solid, sandboxMode);
-      redrawWalls();   
+      redrawWalls();
     }, { passive: false });
-
-    canvas.addEventListener('touchmove', (e) => {
+    canvas.addEventListener('touchmove', e => {
       if (!sandboxActive || !isDrawing) return;
       e.preventDefault();
       const { lx, ly } = canvasToLattice(e.touches[0].clientX, e.touches[0].clientY);
       paintStroke(lx, ly, solid, sandboxMode);
-      redrawWalls();   
+      redrawWalls();
     }, { passive: false });
+    canvas.addEventListener('touchend', () => {
+      isDrawing = false; endStroke(sandboxMode); redrawWalls();
+    });
 
-canvas.addEventListener('touchend', () => {
-  isDrawing = false;
-  endStroke(sandboxMode);
-  redrawWalls();
-});
-
-
-    // ---------------------------------------------------------
-    // FRAME LOOP
-    // ---------------------------------------------------------
+    // ── FRAME LOOP ───────────────────────────────────────────
     function stepOnce() {
       collideFused(solid, wallAdjacent, wallDist, u0);
       stream(solid, solidList, linkMask, linkQ, fluidSurfaceList, paintedNodes);
@@ -476,32 +450,61 @@ canvas.addEventListener('touchend', () => {
       frameCount++;
     }
 
-    let lastTime = performance.now();
+    let lastTime    = performance.now();
     let smoothedFps = 60;
     const fpsSmoothing = 0.9;
-
 
     function tick(now) {
       const dt = now - lastTime;
       lastTime = now;
-      const instFps = dt > 0 ? 1000 / dt : 60;
-      smoothedFps = fpsSmoothing * smoothedFps + (1 - fpsSmoothing) * instFps;
+      smoothedFps = 0.9 * smoothedFps + 0.1 * (dt > 0 ? 1000 / dt : 60);
+
       if (running) {
         for (let s = 0; s < stepsPerFrame; s++) stepOnce();
       }
+
       renderer.draw(
-        { ux, uy },
-        solid,
-        rho,
-        { mode: displayMode, scale: colorScale, autoScale: false, showVectors },
+        { ux, uy }, solid, rho,
+        { mode: displayMode, scale: colorScale, autoScale: false,
+          showVectors, showGrid, gridFine, showDist },
         paintedNodes
       );
-      fpsValue.textContent = smoothedFps.toFixed(0);
-      frameValue.textContent = frameCount.toString();
+
+      document.getElementById('fps-value').textContent   = smoothedFps.toFixed(0);
+      document.getElementById('frame-value').textContent = frameCount.toString();
       requestAnimationFrame(tick);
     }
+
+    // ── TOOLTIPS ─────────────────────────────────────────────
+    const tooltip = document.getElementById('tooltip');
+
+    document.querySelectorAll('.tooltip-trigger').forEach(el => {
+      el.addEventListener('mouseenter', (e) => {
+        tooltip.textContent = el.dataset.tip;
+        tooltip.classList.add('visible');
+        positionTooltip(e);
+      });
+      el.addEventListener('mousemove', positionTooltip);
+      el.addEventListener('mouseleave', () => {
+        tooltip.classList.remove('visible');
+      });
+    });
+
+    function positionTooltip(e) {
+      const pad = 14;
+      const tw  = tooltip.offsetWidth  || 280;
+      const th  = tooltip.offsetHeight || 80;
+      let x = e.clientX + pad;
+      let y = e.clientY + pad;
+      // Flip left if it would overflow right edge
+      if (x + tw > window.innerWidth  - pad) x = e.clientX - tw - pad;
+      // Flip up if it would overflow bottom edge
+      if (y + th > window.innerHeight - pad) y = e.clientY - th - pad;
+      tooltip.style.left = x + 'px';
+      tooltip.style.top  = y + 'px';
+    }
+
     requestAnimationFrame(tick);
   </script>
 </body>
 </html>
-
