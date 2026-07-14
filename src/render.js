@@ -95,24 +95,31 @@ Renderer.prototype.draw = function (fields, solid, rho, options, paintedNodes) {
   const gridFine    = (options && options.gridFine     !== undefined) ? options.gridFine : true;
   const showDist    = (options && options.showDist)    || false;
 
-  // ---- 1. Pre-smooth velocity for vorticity only ----
-  if (mode === 'vort') smoothVelocity(ux, uy, solid, 2);
+  // ---- 1. Pre-smooth velocity for Q-criterion ----
+  if (mode === 'qcrit') smoothVelocity(ux, uy, solid, 2);
 
   // ---- 2. Extract scalar field ----
   for (let n = 0; n < N; n++) {
     if (solid[n]) { scalarField[n] = -1; continue; }
 
-    if (mode === 'vort') {
+    if (mode === 'qcrit') {
       const x = n % NX, y = (n / NX) | 0;
       if (x > 0 && x < NX-1 && y > 0 && y < NY-1) {
-        const curl = (uyS[n+1] - uyS[n-1]) - (uxS[n+NX] - uxS[n-NX]);
-        scalarField[n] = curl;
+        const dudx = (uxS[n+1]  - uxS[n-1])  * 0.5;
+        const dudy = (uxS[n+NX] - uxS[n-NX]) * 0.5;
+        const dvdx = (uyS[n+1]  - uyS[n-1])  * 0.5;
+        const dvdy = (uyS[n+NX] - uyS[n-NX]) * 0.5;
+        const omega   = dvdx - dudy;
+        const strain2 = dudx*dudx + dvdy*dvdy
+                      + 0.5*(dudy + dvdx)*(dudy + dvdx);
+        scalarField[n] = 0.5 * (omega*omega - 2.0*strain2);
       } else {
         scalarField[n] = 0;
       }
+
     } else if (mode === 'press') {
-      const cp = (rho[n] - 1.0) / 3.0;
-      scalarField[n] = cp;
+      scalarField[n] = (rho[n] - 1.0) / 3.0;
+
     } else {
       scalarField[n] = Math.sqrt(ux[n]*ux[n] + uy[n]*uy[n]);
     }
@@ -135,7 +142,7 @@ Renderer.prototype.draw = function (fields, solid, rho, options, paintedNodes) {
   }
 
   // ---- 6. Map scalar → pixels ----
-  const vortGain  = 15;
+  const qGain = 5000;  // tune this — increase if field looks flat
   const pressGain = 0.55;
   const invScale  = 1 / scale;
 
@@ -147,8 +154,8 @@ Renderer.prototype.draw = function (fields, solid, rho, options, paintedNodes) {
       continue;
     }
     let t;
-    if (mode === 'vort') {
-      t = scalarField[n] * vortGain;
+    if (mode === 'qcrit') {
+      t = scalarField[n] * qGain;
       t = (Math.max(-1, Math.min(1, t)) + 1) * 0.5;
     } else if (mode === 'press') {
       t = scalarField[n] * pressGain;
@@ -360,7 +367,59 @@ export function drawBodyVector(params) {
       ctx.lineWidth   = 1.2;
       ctx.stroke();
     }
-  }
+    } else if (params.type === 'nozzle') {
+      const { cy, diameter, length } = params;
+      const halfD         = diameter / 2;
+      const wallThickness = 4;
+      const sx_           = W / NX;
+      const sy_           = H / NY;
+
+      const topY1 = (cy - halfD - wallThickness) * sy_;
+      const topY2 = (cy - halfD) * sy_;
+      const botY1 = (cy + halfD) * sy_;
+      const botY2 = (cy + halfD + wallThickness) * sy_;
+const endX = (length + 0.9) * sx_; // add 3 lattice units of padding
+
+      // Gradient matching cylinder/airfoil style
+      const gradTop = ctx.createLinearGradient(0, topY1, 0, topY2);
+      gradTop.addColorStop(0,   '#48506a');
+      gradTop.addColorStop(0.5, '#1a1f2e');
+      gradTop.addColorStop(1,   '#0a0d16');
+
+      const gradBot = ctx.createLinearGradient(0, botY1, 0, botY2);
+      gradBot.addColorStop(0,   '#0a0d16');
+      gradBot.addColorStop(0.5, '#1a1f2e');
+      gradBot.addColorStop(1,   '#48506a');
+
+      const startX = -10; // bleed well past the left canvas edge
+      // Top wall
+      ctx.beginPath();
+      ctx.rect(startX, topY1, endX - startX, topY2 - topY1);
+      ctx.fillStyle = gradTop;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(175,198,230,0.8)';
+      ctx.lineWidth   = 1.2;
+      ctx.stroke();
+
+      // Bottom wall
+      ctx.beginPath();
+      ctx.rect(startX, botY1, endX - startX, botY2 - botY1);
+      ctx.fillStyle = gradBot;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(175,198,230,0.8)';
+      ctx.lineWidth   = 1.2;
+      ctx.stroke();
+
+      // Exit lip — right end only, no left stroke
+      ctx.beginPath();
+      ctx.moveTo(endX, topY1);
+      ctx.lineTo(endX, topY2);
+      ctx.moveTo(endX, botY1);
+      ctx.lineTo(endX, botY2);
+      ctx.strokeStyle = 'rgba(175,198,230,0.8)';
+      ctx.lineWidth   = 1.5;
+      ctx.stroke();
+    }
   ctx.restore();
 }
 

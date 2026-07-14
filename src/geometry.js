@@ -54,6 +54,32 @@ function sdfNACA0012(cx, cy, chord, alpha) {
   };
 }
 
+
+// ---------------------------------------------------------
+// Slot nozzle extruding from the inlet wall
+// ---------------------------------------------------------
+function sdfNozzle(cy, diameter, length) {
+  const halfD = diameter / 2;
+  const wallThickness = 3; // lattice units — thickness of nozzle walls
+
+  return (x, y) => {
+    // Nozzle walls only exist from x=0 to x=length
+    if (x > length) return 1.0;
+
+    // Distance from centerline
+    const distFromCenter = Math.abs(y - cy);
+
+    // Inside the nozzle opening — fluid
+    if (distFromCenter <= halfD) return 1.0;
+
+    // Inside the wall thickness — solid
+    if (distFromCenter <= halfD + wallThickness) return -1.0;
+
+    // Outside the walls — fluid (coflow region)
+    return 1.0;
+  };
+}
+
 // ---------------------------------------------------------
 // Matrix of square blocks
 // ---------------------------------------------------------
@@ -226,3 +252,15 @@ export function defaultCylinder() {
   return buildCylinder(cx, cy, radius);
 }
 
+export function buildNozzle(cy, diameter) {
+  const length = Math.floor(NX * 0.15); // nozzle extends 15% into domain
+  setCharacteristicLength(diameter);
+  const geometry = buildGeometryFromSDF(sdfNozzle(cy, diameter, length));
+  return { geometry, cy, diameter, length };
+}
+
+export function defaultNozzle() {
+  const cy       = Math.floor(NY / 2);
+  const diameter = Math.floor(NY / 4); // 25% of domain height
+  return buildNozzle(cy, diameter);
+}

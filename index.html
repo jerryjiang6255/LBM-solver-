@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>V5 LBM Flow Visualizer</title>
+  <title>LBM Flow Visualizer</title>
   <link rel="stylesheet" href="style.css" />
 
   <!-- Open Graph preview card -->
@@ -33,6 +33,8 @@
         <span class="tooltip-trigger" data-tip="Smagorinsky LES: Large Eddy Simulation turbulence model. Adds eddy viscosity νt = (Cs·Δ)²·|S| to the base viscosity, damping sub-grid turbulent fluctuations without resolving them explicitly.">Smagorinsky LES</span>
         <span class="subtitle-sep"> · </span>
         <span class="tooltip-trigger" data-tip="BFL (Bouzidi-Firdaouss-Lallemand): interpolated bounce-back boundary condition. Uses the fractional wall distance q from the SDF to reconstruct distributions with sub-lattice accuracy, eliminating the half-node position error of plain bounce-back.">BFL boundary</span>
+        <span class="subtitle-sep"> · </span>
+        <span class="tooltip-trigger" data-tip="Log-law wall model: near-wall turbulence closure using the law of the wall u+ = (1/κ)ln(y+) + B, where κ=0.41 (von Kármán constant) and B=5.2. Solved iteratively via Newton-Raphson to find the friction velocity u* from the local wall distance and velocity magnitude. Van Driest damping f = 1 - exp(-y+/A+) blends the eddy viscosity to zero at the wall, recovering the viscous sublayer without requiring wall-resolved grid spacing.">Wall model</span>
       </span>
       <a class="credit" href="https://www.linkedin.com/in/jerry-jiang-a38127285/" target="_blank" rel="noopener noreferrer">
         Built by <span class="credit-name">Jerry Jiang</span>
@@ -63,6 +65,7 @@
             <button class="btn"        id="body-blocks">Blocks</button>
             <button class="btn"        id="body-cylinder">Cylinder</button>
             <button class="btn"        id="body-empty">Empty</button>
+            <button class="btn"        id="body-nozzle">Nozzle</button>
           </div>
           <div class="slider-row" id="aoa-row" style="display:none">
             <label>
@@ -71,24 +74,30 @@
             </label>
             <input type="range" id="aoa-slider" min="-20" max="20" step="0.5" value="10" />
           </div>
+          <div class="slider-row" id="nozzle-row" style="display:none">
+            <label>
+              <span>Nozzle diameter</span>
+              <output id="nozzle-value">16</output>
+            </label>
+            <input type="range" id="nozzle-slider" min="8" max="80" step="2" value="16" />
+          </div>
         </div>
 
         <!-- 3. FLOW -->
         <div class="ctrl-group">
           <div class="group-label">Flow</div>
-          <div class="slider-row">
-            <label>
-              <span>Inlet velocity</span>
-              <output id="u0-value">0.500</output>
-            </label>
-            <input type="range" id="u0-slider" min="0.02" max="1" step="0.005" value="0.5" />
-          </div>
+            <div class="slider-row">
+              <label>
+                <span>Inlet velocity</span>
+                <output id="u0-value">Ma = 0.30</output>
+              </label>
+                <input type="range" id="u0-slider" min="0.01" max="0.23" step="0.005" value="0.1732" />            </div>
           <div class="slider-row">
             <label>
               <span>Reynolds number</span>
-              <output id="re-value">1000</output>
+              <output id="re-value">5000</output>
             </label>
-            <input type="range" id="re-slider" min="20" max="2000" step="10" value="1000" />
+            <input type="range" id="re-slider" min="20" max="10000" step="10" value="5000" />
           </div>
         </div>
 
@@ -97,7 +106,7 @@
           <div class="group-label">Display</div>
           <div class="btn-grid">
             <button class="btn active" id="mode-speed">Speed</button>
-            <button class="btn"        id="mode-vort">Vorticity</button>
+            <button class="btn" id="mode-qcrit">Q-Criterion</button>
           </div>
           <div class="btn-grid">
             <button class="btn" id="vector-btn">Vectors</button>
@@ -205,11 +214,13 @@
     } from "./src/lbm.js";
     import {
       buildCylinder, defaultCylinder, buildAirfoil,
-      buildEmpty, defaultBlockMatrix
+      buildEmpty, defaultBlockMatrix, buildNozzle, defaultNozzle
     } from "./src/geometry.js";
     import { collideFused }            from "./src/collisionFused.js";
     import { stream }                  from "./src/streaming.js";
-    import { applyBoundaryConditions } from "./src/boundary.js";
+    import {
+      applyBoundaryConditions, setNozzleInlet, clearNozzleInlet
+    } from "./src/boundary.js";
     import { Renderer, setBodyCanvas, drawBodyVector } from "./src/render.js";
     import {
       clearDrawing, beginStroke, paintStroke,
@@ -226,6 +237,13 @@
     document.getElementById('aoa-row').style.display = '';  // show on load
     let aoaDeg   = 10;
     let solidBase;
+    let nozzleDiameter = 16;
+    const NOZZLE_CY    = Math.floor(NY / 2);
+    const U_COFLOW     = 0.005;
+    const CS_LATTICE = 1 / Math.sqrt(3); // ≈ 0.5774
+
+    
+
 
     // ── CANVAS SETUP ────────────────────────────────────────
     const canvas     = document.getElementById('flow-canvas');
@@ -256,9 +274,15 @@
       } else if (bodyType === 'blocks') {
         const r = defaultBlockMatrix();
         return { g: r.geometry, p: { type:'blocks', blocks:r.blocks, blockSize:r.blockSize } };
+      } else if (bodyType === 'nozzle') {
+        const result = buildNozzle(NOZZLE_CY, nozzleDiameter);
+        return {
+          g: result.geometry,
+          p: { type: 'nozzle', cy: result.cy,
+              diameter: result.diameter, length: result.length }};
       } else {
         return { g: defaultCylinder(), p: { type:'cylinder', cx, cy, radius } };
-      }
+      } 
     }
 
     function applyGeometry({ g, p }) {
@@ -272,6 +296,13 @@
       fluidSurfaceList = g.fluidSurfaceList;
       const bCtx = bodyCanvas.getContext('2d');
       bCtx.clearRect(0, 0, bCtx.canvas.width, bCtx.canvas.height);
+      
+      if (bodyType === 'nozzle') {
+        setNozzleInlet(NOZZLE_CY, nozzleDiameter, U_COFLOW);
+      } else {
+        clearNozzleInlet();
+      }
+      
       if (bodyType !== 'empty') drawBodyVector(p);
       redrawWalls();
     }
@@ -290,7 +321,7 @@
     }
 
     // ── SIM STATE ───────────────────────────────────────────
-    let u0            = parseFloat(document.getElementById('u0-slider').value);
+    let u0            = 0.1732
     let reynolds      = parseFloat(document.getElementById('re-slider').value);
     let displayMode   = 'speed';
     let colorScale    = parseFloat(document.getElementById('scale-slider').value);
@@ -325,8 +356,11 @@
     // ── FLOW ────────────────────────────────────────────────
     document.getElementById('u0-slider').addEventListener('input', e => {
       u0 = parseFloat(e.target.value);
-      document.getElementById('u0-value').textContent = u0.toFixed(3);
+      document.getElementById('u0-value').textContent = `Ma ${(u0 / CS_LATTICE).toFixed(2)}`;
     });
+
+    // Set initial display
+    document.getElementById('u0-value').textContent = `Ma ${(u0 / CS_LATTICE).toFixed(2)}`;
     document.getElementById('re-slider').addEventListener('input', e => {
       reynolds = parseFloat(e.target.value);
       document.getElementById('re-value').textContent = reynolds.toFixed(0);
@@ -342,12 +376,12 @@
     });
 
     // ── FIELD MODE ───────────────────────────────────────────
-    const modeGroup = ['mode-speed','mode-vort'];
+    const modeGroup = ['mode-speed', 'mode-qcrit'];
     document.getElementById('mode-speed').addEventListener('click', () => {
       displayMode = 'speed'; setActiveBtn(modeGroup, 'mode-speed');
     });
-    document.getElementById('mode-vort').addEventListener('click', () => {
-      displayMode = 'vort'; setActiveBtn(modeGroup, 'mode-vort');
+    document.getElementById('mode-qcrit').addEventListener('click', () => {
+      displayMode = 'qcrit'; setActiveBtn(modeGroup, 'mode-qcrit');
     });
 
     // ── OVERLAYS ─────────────────────────────────────────────
@@ -362,13 +396,17 @@
     });
 
     // ── BODY ─────────────────────────────────────────────────
-    const bodyGroup = ['body-airfoil','body-blocks','body-cylinder','body-empty'];
+    const bodyGroup = ['body-airfoil','body-blocks','body-cylinder','body-empty','body-nozzle'];
     const aoaRow    = document.getElementById('aoa-row');
+    const nozzleRow    = document.getElementById('nozzle-row');
+    const nozzleSlider = document.getElementById('nozzle-slider');
+    const nozzleOutput = document.getElementById('nozzle-value');
 
     function switchBody(type, btnId) {
       bodyType = type;
       setActiveBtn(bodyGroup, btnId);
-      aoaRow.style.display = type === 'airfoil' ? '' : 'none';
+      aoaRow.style.display    = type === 'airfoil' ? '' : 'none';
+      nozzleRow.style.display = type === 'nozzle'  ? '' : 'none';
       rebuildGeometryOnly();
     }
 
@@ -376,10 +414,22 @@
     document.getElementById('body-airfoil' ).addEventListener('click', () => switchBody('airfoil', 'body-airfoil'));
     document.getElementById('body-blocks'  ).addEventListener('click', () => switchBody('blocks',  'body-blocks'));
     document.getElementById('body-empty'   ).addEventListener('click', () => switchBody('empty',   'body-empty'));
+    document.getElementById('body-nozzle'  ).addEventListener('click', () => switchBody('nozzle', 'body-nozzle'));
+
 
     document.getElementById('aoa-slider').addEventListener('input', e => {
       aoaDeg = parseFloat(e.target.value);
       document.getElementById('aoa-value').textContent = aoaDeg.toFixed(1) + '°';
+      rebuildGeometryOnly();
+    });
+
+
+
+    nozzleSlider.addEventListener('input', () => {
+      nozzleDiameter = parseInt(nozzleSlider.value, 10);
+      nozzleOutput.textContent = nozzleDiameter;
+      // Update the live nozzle inlet split immediately
+      setNozzleInlet(NOZZLE_CY, nozzleDiameter, U_COFLOW);
       rebuildGeometryOnly();
     });
 
