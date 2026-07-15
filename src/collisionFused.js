@@ -1,8 +1,7 @@
-// src/collisionFused.js  (V4)
-// ============================================================
+// src/collisionFused.js  (compare-mode ready, minimal refactor)
 // ============================================================
 
-import { N, Q, CX, CY, W, OPP, f, rho, ux, uy, NU0 } from "./lbm.js";
+import { CX, CY, W } from "./lbm.js";
 
 // ---------------------------------------------------------
 // LES constants
@@ -35,13 +34,17 @@ const TAU_MAX = 5.0;
 // ---------------------------------------------------------
 const LAMBDA = 3.0 / 16.0;
 const TRT_PAIRS = new Uint8Array([1, 3,  2, 4,  5, 7,  6, 8]);
-const feqScratch = new Float32Array(Q);
+
+// feq scratch remains module-local since both sims run sequentially,
+// not concurrently. Q is fixed at 9 in current architecture.
+const feqScratch = new Float32Array(9);
 
 // ---------------------------------------------------------
-// collideFused(solid, wallAdjacent, wallDist, u0)
+// collideFused(sim, u0)
 // ---------------------------------------------------------
-export function collideFused(solid, wallAdjacent, wallDist, u0) {
-  const tauBase    = 3.0 * NU0 + 0.5;
+export function collideFused(sim, u0) {
+  const { N, Q, f, rho, ux, uy, solid, wallAdjacent, wallDist, NU0 } = sim;
+
   const STRAIN_PRE = -1.5; // -3/2 factor in Sij = -3/(2*rho)*sum(...)
 
   for (let n = 0; n < N; n++) {
@@ -61,7 +64,7 @@ export function collideFused(solid, wallAdjacent, wallDist, u0) {
     }
 
     if (!Number.isFinite(r) || r < RHO_MIN || r > RHO_MAX) {
-      reequilibrate(n, u0, 0.0, 1.0);
+      reequilibrate(sim, n, u0, 0.0, 1.0);
       continue;
     }
 
@@ -69,14 +72,15 @@ export function collideFused(solid, wallAdjacent, wallDist, u0) {
     let v = jy / r;
 
     if (!Number.isFinite(u) || !Number.isFinite(v)) {
-      reequilibrate(n, u0, 0.0, 1.0);
+      reequilibrate(sim, n, u0, 0.0, 1.0);
       continue;
     }
 
     const spd2 = u * u + v * v;
     if (spd2 > U_CAP * U_CAP) {
       const sc = U_CAP / Math.sqrt(spd2);
-      u *= sc; v *= sc;
+      u *= sc;
+      v *= sc;
     }
 
     rho[n] = r;
@@ -92,9 +96,10 @@ export function collideFused(solid, wallAdjacent, wallDist, u0) {
     let Pxx = 0.0, Pyy = 0.0, Pxy = 0.0;
 
     for (let i = 0; i < Q; i++) {
-      const cx  = CX[i], cy = CY[i];
-      const cu  = cx * u + cy * v;
-      const eq  = W[i] * r * (1.0 + 3.0 * cu + 4.5 * cu * cu - v215);
+      const cx = CX[i];
+      const cy = CY[i];
+      const cu = cx * u + cy * v;
+      const eq = W[i] * r * (1.0 + 3.0 * cu + 4.5 * cu * cu - v215);
       feqScratch[i] = eq;
 
       const fneq = f[base + i] - eq;
@@ -109,8 +114,8 @@ export function collideFused(solid, wallAdjacent, wallDist, u0) {
     const Sxx  = strainFactor * Pxx;
     const Syy  = strainFactor * Pyy;
     const Sxy  = strainFactor * Pxy;
-    const Smag = Math.sqrt(2.0 * (Sxx*Sxx + Syy*Syy + 2.0*Sxy*Sxy));
-    let   nuT  = CS_DELTA_SQ * Smag;
+    const Smag = Math.sqrt(2.0 * (Sxx * Sxx + Syy * Syy + 2.0 * Sxy * Sxy));
+    let nuT    = CS_DELTA_SQ * Smag;
 
     // =====================================================
     // Scalar: wall model (log-law + Van Driest)
@@ -126,9 +131,13 @@ export function collideFused(solid, wallAdjacent, wallDist, u0) {
         const R      = uStar * lhs - uMag;
         const Rp     = lhs + 1.0 / KAPPA;
         if (Math.abs(Rp) < 1e-10) break;
+
         let next = uStar - R / Rp;
         if (!Number.isFinite(next) || next <= 0.0) next = 1e-6;
-        if (Math.abs(next - uStar) < WALL_TOL) { uStar = next; break; }
+        if (Math.abs(next - uStar) < WALL_TOL) {
+          uStar = next;
+          break;
+        }
         uStar = next;
       }
 
@@ -140,61 +149,61 @@ export function collideFused(solid, wallAdjacent, wallDist, u0) {
     // =====================================================
     // Scalar: TRT relaxation rates
     // =====================================================
-    const nuTot   = NU0 + nuT;
-    let   tauPlus = 3.0 * nuTot + 0.5;
+    const nuTot = NU0 + nuT;
+    let tauPlus = 3.0 * nuTot + 0.5;
     if (tauPlus < TAU_MIN) tauPlus = TAU_MIN;
     if (tauPlus > TAU_MAX) tauPlus = TAU_MAX;
 
-    const omegaPlus = 1.0 / tauPlus;
-
-    // tau- from Magic Parameter: tau- = Lambda/(tau+ - 0.5) + 0.5
-    const tauMinus  = LAMBDA / (tauPlus - 0.5) + 0.5;
+    const omegaPlus  = 1.0 / tauPlus;
+    const tauMinus   = LAMBDA / (tauPlus - 0.5) + 0.5;
     const omegaMinus = 1.0 / tauMinus;
 
     // =====================================================
     // Direction loop 3: TRT relax + recombine
     // =====================================================
-
     f[base] -= omegaPlus * (f[base] - feqScratch[0]);
 
-    // 4 opposite pairs
     for (let p = 0; p < 8; p += 2) {
       const i  = TRT_PAIRS[p];
-      const ib = TRT_PAIRS[p + 1]; // opposite of i
+      const ib = TRT_PAIRS[p + 1];
 
-      const fi   = f[base + i ];
+      const fi   = f[base + i];
       const fib  = f[base + ib];
-      const eqi  = feqScratch[i ];
+      const eqi  = feqScratch[i];
       const eqib = feqScratch[ib];
 
-      // even/odd split
-      const fPlus  = 0.5 * (fi  + fib);  // fi+
-      const fMinus = 0.5 * (fi  - fib);  // fi-
-      const eqPlus = 0.5 * (eqi + eqib); // feqi+
-      const eqMinus= 0.5 * (eqi - eqib); // feqi-
+      const fPlus   = 0.5 * (fi + fib);
+      const fMinus  = 0.5 * (fi - fib);
+      const eqPlus  = 0.5 * (eqi + eqib);
+      const eqMinus = 0.5 * (eqi - eqib);
 
-      // TRT relax
-      const fPlusPost  = fPlus  - omegaPlus  * (fPlus  - eqPlus );
+      const fPlusPost  = fPlus  - omegaPlus  * (fPlus  - eqPlus);
       const fMinusPost = fMinus - omegaMinus * (fMinus - eqMinus);
 
-      // Recombine into i and ī
-      f[base + i ] = fPlusPost + fMinusPost;
+      f[base + i]  = fPlusPost + fMinusPost;
       f[base + ib] = fPlusPost - fMinusPost;
     }
   }
 }
 
 // ---------------------------------------------------------
-// reequilibrate(n, u, v, r)
+// reequilibrate(sim, n, u, v, r)
 // ---------------------------------------------------------
-function reequilibrate(n, u, v, r) {
-  rho[n]      = r;
-  ux[n]       = u;
-  uy[n]       = v;
-  const base  = n * Q;
-  const v215  = 1.5 * (u * u + v * v);
+function reequilibrate(sim, n, u, v, r) {
+  const { Q, f, rho, ux, uy } = sim;
+
+  rho[n] = r;
+  ux[n]  = u;
+  uy[n]  = v;
+
+  const base = n * Q;
+  const v215 = 1.5 * (u * u + v * v);
+
   for (let i = 0; i < Q; i++) {
-    const cu    = CX[i] * u + CY[i] * v;
+    const cu = CX[i] * u + CY[i] * v;
     f[base + i] = W[i] * r * (1.0 + 3.0 * cu + 4.5 * cu * cu - v215);
   }
 }
+
+
+

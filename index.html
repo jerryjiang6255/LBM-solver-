@@ -6,7 +6,6 @@
   <title>LBM Flow Visualizer</title>
   <link rel="stylesheet" href="style.css" />
 
-  <!-- Open Graph preview card -->
   <meta property="og:title"       content="Lattice Boltzmann Flow Visualizer" />
   <meta property="og:description" content="Real-time D2Q9 LBM fluid simulation with TRT collision, Smagorinsky LES, BFL boundaries, and live sandbox drawing." />
   <meta property="og:image"       content="https://jerryjiang6255.github.io/LBM-solver-/preview.png" />
@@ -17,14 +16,14 @@
   <meta name="twitter:title"       content="Lattice Boltzmann Flow Visualizer" />
   <meta name="twitter:description" content="Real-time D2Q9 LBM fluid simulation with TRT collision, Smagorinsky LES, BFL boundaries, and live sandbox drawing." />
   <meta name="twitter:image"       content="https://jerryjiang6255.github.io/LBM-solver-/preview.png" />
-
 </head>
 <body>
   <div class="app">
 
     <header class="app-header">
       <h1>Lattice Boltzmann Sandbox
-      <span class="tag tooltip-trigger" data-tip="V5 features: TRT two-relaxation-time collision, Smagorinsky LES eddy viscosity, BFL interpolated boundary with SDF q values, hard Dirichlet inlet reset, zero-gradient outlet copy, far-field Dirichlet top/bottom walls, user-drawn sandbox walls with real-time flow interaction.">V5</span>      </h1>
+        <span class="tag tooltip-trigger" data-tip="V5 features: TRT two-relaxation-time collision, Smagorinsky LES eddy viscosity, BFL interpolated boundary with SDF q values, hard Dirichlet inlet reset, zero-gradient outlet copy, far-field Dirichlet top/bottom walls, user-drawn sandbox walls with real-time flow interaction.">V5</span>
+      </h1>
       <span class="subtitle">
         <span class="tooltip-trigger" data-tip="D2Q9: 2-dimensional, 9-velocity lattice. Each node stores 9 distribution functions representing particle populations moving in 8 directions plus rest.">D2Q9</span>
         <span class="subtitle-sep"> · </span>
@@ -39,33 +38,31 @@
       <a class="credit" href="https://www.linkedin.com/in/jerry-jiang-a38127285/" target="_blank" rel="noopener noreferrer">
         Built by <span class="credit-name">Jerry Jiang</span>
       </a>
-    </header>
-
-    <div class="tooltip" id="tooltip" role="tooltip"></div>
-
+    </header> 
+   <div class="tooltip" id="tooltip" role="tooltip"></div>
 
     <main class="app-main">
-
-      <!-- ── TOP CONTROL PANEL ── -->
       <div class="hud">
 
-        <!-- 1. SANDBOX -->
-        <div class="ctrl-group">
-          <div class="group-label">Sandbox</div>
-          <div class="btn-grid">
-            <button class="btn" id="sandbox-btn">Sandbox</button>
-          </div>
+      <div class="ctrl-group">
+        <div class="group-label">Session</div>
+        <div class="btn-stack">
+          <button class="btn" id="sandbox-btn">Sandbox</button>
+          <button class="btn" id="compare-btn">Compare</button>
         </div>
+        <div id="compare-targets" style="display:none">
+          <!-- moved to flow-target-bar, keep empty or remove -->
+        </div>
+      </div>
 
-        <!-- 2. BODY — reordered: NACA, Blocks, Cylinder, Empty -->
         <div class="ctrl-group">
           <div class="group-label">Body</div>
           <div class="btn-grid">
             <button class="btn active" id="body-airfoil">NACA 0012</button>
+            <button class="btn"        id="body-nozzle">Nozzle</button>
             <button class="btn"        id="body-blocks">Blocks</button>
             <button class="btn"        id="body-cylinder">Cylinder</button>
             <button class="btn"        id="body-empty">Empty</button>
-            <button class="btn"        id="body-nozzle">Nozzle</button>
           </div>
           <div class="slider-row" id="aoa-row" style="display:none">
             <label>
@@ -83,15 +80,15 @@
           </div>
         </div>
 
-        <!-- 3. FLOW -->
         <div class="ctrl-group">
           <div class="group-label">Flow</div>
-            <div class="slider-row">
-              <label>
-                <span>Inlet velocity</span>
-                <output id="u0-value">Ma = 0.30</output>
-              </label>
-                <input type="range" id="u0-slider" min="0.01" max="0.23" step="0.005" value="0.1732" />            </div>
+          <div class="slider-row">
+            <label>
+              <span>Inlet velocity</span>
+              <output id="u0-value">Ma = 0.30</output>
+            </label>
+            <input type="range" id="u0-slider" min="0.01" max="0.23" step="0.005" value="0.1732" />
+          </div>
           <div class="slider-row">
             <label>
               <span>Reynolds number</span>
@@ -101,7 +98,6 @@
           </div>
         </div>
 
-        <!-- 4. DISPLAY — color scale removed, moved to controls -->
         <div class="ctrl-group">
           <div class="group-label">Display</div>
           <div class="btn-grid">
@@ -112,9 +108,7 @@
             <button class="btn" id="vector-btn">Vectors</button>
             <button class="btn" id="dist-btn">Distribution</button>
           </div>
-        </div>
-
-        <!-- 5. CONTROLS — color scale added here -->
+        </div> 
         <div class="ctrl-group">
           <div class="group-label">Controls</div>
           <div class="slider-row">
@@ -125,13 +119,19 @@
             <input type="range" id="scale-slider" min="0.02" max="1.0" step="0.005" value="0.5" />
           </div>
           <div class="btn-grid">
+            <!-- <button class="btn"        id="compare-btn">Compare</button> -->
             <button class="btn"        id="pause-btn">Pause</button>
             <button class="btn danger" id="clear-btn">Clear</button>
             <button class="btn danger" id="reset-btn">Reset</button>
           </div>
+          <!-- <div class="btn-grid" id="compare-targets" style="display:none">
+            <button class="btn active" id="target-1">Flow 1</button>
+            <button class="btn active" id="target-2">Flow 2</button>
+          </div> -->
         </div>
 
-        <!-- 6. STATS — sim speed added here -->
+
+
         <div class="ctrl-group">
           <div class="group-label">Stats</div>
           <div class="slider-row">
@@ -148,35 +148,53 @@
             </div>
             <div class="stat">
               <span class="stat-label">Frame</span>
-              <output class="stat-value" id="frame-value">0</output>
+              <output class="stat-value" id="frame-value">0 / 0</output>
             </div>
           </div>
         </div>
 
-        <!-- 7. SIM INFO -->
         <div class="ctrl-group">
           <div class="group-label">Sim Info</div>
-          <div class="stat">
-            <span class="stat-label">Grid</span>
-            <output class="stat-value" id="grid-value" style="font-size:0.75rem">256×128</output>
-          </div>
-          <div class="stat">
-            <span class="stat-label">Nodes</span>
-            <output class="stat-value" id="nodes-value" style="font-size:0.75rem">32,768</output>
+          <div class="sim-info-row">
+            <div class="btn-stack">
+              <button class="btn" id="grid-high">High</button>
+              <button class="btn active" id="grid-mid">Mid</button>
+              <button class="btn" id="grid-low">Low</button>
+            </div>
+            <div class="sim-stats">
+              <div class="stat">
+                <span class="stat-label">Grid</span>
+                <output class="stat-value" id="grid-value" style="font-size:0.75rem">256×128</output>
+              </div>
+              <div class="stat">
+                <span class="stat-label">Nodes</span>
+                <output class="stat-value" id="nodes-value" style="font-size:0.75rem">32,768</output>
+              </div>
+            </div>
           </div>
         </div>
 
-        <p class="error" id="app-error" role="alert"></p>
-
-      </div><!-- /.hud -->
-
-      <!-- ── CANVAS STACK — separate block with gap above ── -->
-      <div class="canvas-wrap">
-        <canvas id="flow-canvas"></canvas>
-        <canvas id="body-canvas"></canvas>
-        <canvas id="wall-canvas"></canvas>
+       <p class="error" id="app-error" role="alert"></p>
       </div>
 
+      <div class="flow-target-bar" id="flow-target-bar" style="display:none">
+  <button class="btn active" id="flow-label-1">Flow 1</button>
+  <button class="btn active" id="flow-label-2">Flow 2</button>
+</div>
+
+      <div class="compare-wrap">
+        <div class="canvas-wrap" id="canvas-wrap-1" data-label="Flow 1">
+          <canvas id="flow-canvas-1"></canvas>
+          <canvas id="body-canvas-1"></canvas>
+          <canvas id="wall-canvas-1"></canvas>
+          <!-- Flow target button overlay -->
+        </div>
+        <div class="canvas-wrap" id="canvas-wrap-2" data-label="Flow 2" style="display:none">
+          <canvas id="flow-canvas-2"></canvas>
+          <canvas id="body-canvas-2"></canvas>
+          <canvas id="wall-canvas-2"></canvas>
+        </div>
+      </div>
     </main>
 
     <footer class="footer">
@@ -194,9 +212,8 @@
         appreciated.
       </p>
     </footer>
-  </div>
-
-  <script>
+  </div> 
+ <script>
     const errEl = () => document.getElementById('app-error');
     window.addEventListener('error', e => {
       errEl().textContent = 'Error: ' + (e.message || e.error) +
@@ -208,366 +225,674 @@
   </script>
 
   <script type="module">
+    import { Q, W } from "./src/lbm.js";
     import {
-      NX, NY, N, Q, f, rho, ux, uy, W,
-      initField, setReynolds,
-    } from "./src/lbm.js";
-    import {
-      buildCylinder, defaultCylinder, buildAirfoil,
-      buildEmpty, defaultBlockMatrix, buildNozzle, defaultNozzle
-    } from "./src/geometry.js";
-    import { collideFused }            from "./src/collisionFused.js";
-    import { stream }                  from "./src/streaming.js";
+      createSimInstance, initField, setReynolds, setCharacteristicLength
+    } from "./src/simInstance.js";
+    import { collideFused } from "./src/collisionFused.js";
+    import { stream } from "./src/streaming.js";
     import {
       applyBoundaryConditions, setNozzleInlet, clearNozzleInlet
     } from "./src/boundary.js";
-    import { Renderer, setBodyCanvas, drawBodyVector } from "./src/render.js";
+    import { Renderer } from "./src/render.js";
+    import { BodyRenderer } from "./src/renderBody.js";
+    import { createUserDraw } from "./src/userDraw.js";
     import {
-      clearDrawing, beginStroke, paintStroke,
-      endStroke, paintedNodes, setWallCanvas, redrawWalls
-    } from "./src/userDraw.js";
+      buildAirfoil, buildEmpty, defaultBlockMatrix, buildNozzle, defaultCylinder
+    } from "./src/geometry.js";
 
-    // ── GEOMETRY STATE ──────────────────────────────────────
-    const cx     = Math.floor(NX / 4);
-    const cy     = Math.floor(NY / 2);
-    const radius = Math.max(4, Math.floor(NY / 8));
+    const GRID_PRESETS = {
+      low:  { NX: 160, NY: 80 },
+      mid:  { NX: 256, NY: 128 },
+      high: { NX: 384, NY: 192 },
+    };
 
-    let solid, wallDist, wallAdjacent, solidList, fluidSurfaceList, linkMask, linkQ;
-    let bodyType = 'airfoil';
-    document.getElementById('aoa-row').style.display = '';  // show on load
-    let aoaDeg   = 10;
-    let solidBase;
-    let nozzleDiameter = 16;
-    const NOZZLE_CY    = Math.floor(NY / 2);
-    const U_COFLOW     = 0.005;
-    const CS_LATTICE = 1 / Math.sqrt(3); // ≈ 0.5774
+    const U_COFLOW = 0.005;
+    const CS_LATTICE = 1 / Math.sqrt(3);
 
-    
+    let currentGridKey = "mid";
+    let sandboxActive = false;
+    let sandboxMode = "draw";
 
+    let sim1 = null;
+    let sim2 = null;
 
-    // ── CANVAS SETUP ────────────────────────────────────────
-    const canvas     = document.getElementById('flow-canvas');
-    const renderer   = new Renderer(canvas);
-    const bodyCanvas = document.getElementById('body-canvas');
-    bodyCanvas.width  = renderer.W;
-    bodyCanvas.height = renderer.H;
-    setBodyCanvas(bodyCanvas);
+    function currentDims() {
+      return GRID_PRESETS[currentGridKey];
+    }
 
-    const wallCanvas = document.getElementById('wall-canvas');
-    wallCanvas.width  = renderer.W;
-    wallCanvas.height = renderer.H;
-    setWallCanvas(wallCanvas);
+    function currentNozzleCy() {
+      return Math.floor(currentDims().NY / 2);
+    }
 
-    // ── GEOMETRY BUILDERS ───────────────────────────────────
-    function resolveGeometry() {
-      if (bodyType === 'airfoil') {
-        const chord = Math.floor(NX / 3);
-        const acx   = Math.floor(NX / 3);
-        const acy   = Math.floor(NY / 2);
+    function updateGridStats() {
+      const { NX, NY } = currentDims();
+      document.getElementById("grid-value").textContent = `${NX}×${NY}`;
+      document.getElementById("nodes-value").textContent = (NX * NY).toLocaleString();
+    }
+
+    function cloneCanvasById(id) {
+      const oldCanvas = document.getElementById(id);
+      const newCanvas = oldCanvas.cloneNode(false);
+      oldCanvas.parentNode.replaceChild(newCanvas, oldCanvas);
+      return newCanvas;
+    }
+
+   function setupSim(sim, flowId, bodyId, wallId) {
+    sim.flowCanvas = cloneCanvasById(flowId);
+    sim.renderer   = new Renderer(sim.flowCanvas, sim.NX, sim.NY);
+
+    sim.bodyCanvas = cloneCanvasById(bodyId);
+    sim.wallCanvas = cloneCanvasById(wallId);
+
+    sim.flowCanvas.style.cursor = sandboxActive ? 'crosshair' : 'default';
+
+requestAnimationFrame(() => {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const W   = (sim.flowCanvas.clientWidth || sim.NX * 4) * dpr;
+  const H   = Math.round(W * sim.NY / sim.NX);  // exact aspect ratio
+
+  // All three canvases get identical pixel dimensions
+  sim.flowCanvas.width  = W;
+  sim.flowCanvas.height = H;
+  sim.renderer.W = W;
+  sim.renderer.H = H;
+  sim.renderer.ctx = sim.flowCanvas.getContext('2d');
+
+  sim.bodyCanvas.width  = W;  // ← must match flow canvas exactly
+  sim.bodyCanvas.height = H;  // ← must match flow canvas exactly
+  sim.wallCanvas.width  = W;
+  sim.wallCanvas.height = H;
+
+  sim.bodyRenderer = new BodyRenderer(sim.bodyCanvas, sim.NX, sim.NY);
+  sim.userDraw     = createUserDraw(sim, sim.wallCanvas);
+
+  bindCanvasInput(sim);
+  resetSim(sim);
+
+    });
+  }
+
+   function createSim(id, bodyType, aoaDeg) {
+      const { NX, NY } = currentDims();
+
+      return createSimInstance({
+        id,
+        NX,
+        NY,
+        bodyType,
+        aoaDeg,
+        nozzleDiameter: parseInt(document.getElementById("nozzle-slider").value, 10),
+        u0: parseFloat(document.getElementById("u0-slider").value),
+        reynolds: parseFloat(document.getElementById("re-slider").value),
+        displayMode: document.getElementById("mode-qcrit").classList.contains("active") ? "qcrit" : "speed",
+        colorScale: parseFloat(document.getElementById("scale-slider").value),
+        showVectors: document.getElementById("vector-btn").classList.contains("active"),
+        showGrid: document.getElementById("dist-btn").classList.contains("active"),
+        gridFine: document.getElementById("dist-btn").classList.contains("active"),
+        showDist: document.getElementById("dist-btn").classList.contains("active"),
+        stepsPerFrame: parseInt(document.getElementById("steps-slider").value, 10),
+        running: document.getElementById("pause-btn").textContent !== "Resume",
+        nozzleCy: Math.floor(NY / 2),
+        uCoflow: U_COFLOW
+      });
+    }
+
+    function resolveGeometry(sim) {
+      const dims = { NX: sim.NX, NY: sim.NY };
+      const bodyType = sim.params.bodyType;
+      const aoaDeg = sim.params.aoaDeg;
+      const nozzleDiameter = sim.params.nozzleDiameter;
+
+      if (bodyType === "airfoil") {
+        const chord = Math.floor(sim.NX / 3);
+        const acx   = Math.floor(sim.NX / 3);
+        const acy   = Math.floor(sim.NY / 2);
         const alpha = aoaDeg * Math.PI / 180;
-        return {
-          g: buildAirfoil(acx, acy, chord, alpha),
-          p: { type:'airfoil', cx:acx, cy:acy, chord, alpha }
-        };
-      } else if (bodyType === 'empty') {
-        return { g: buildEmpty(), p: { type:'empty' } };
-      } else if (bodyType === 'blocks') {
-        const r = defaultBlockMatrix();
-        return { g: r.geometry, p: { type:'blocks', blocks:r.blocks, blockSize:r.blockSize } };
-      } else if (bodyType === 'nozzle') {
-        const result = buildNozzle(NOZZLE_CY, nozzleDiameter);
+        const result = buildAirfoil(dims, acx, acy, chord, alpha);
         return {
           g: result.geometry,
-          p: { type: 'nozzle', cy: result.cy,
-              diameter: result.diameter, length: result.length }};
-      } else {
-        return { g: defaultCylinder(), p: { type:'cylinder', cx, cy, radius } };
-      } 
-    }
+          p: { type: "airfoil", cx: acx, cy: acy, chord, alpha },
+          charLength: result.charLength
+        };
 
-    function applyGeometry({ g, p }) {
-      solidBase        = g.solid;
-      solid            = new Uint8Array(g.solid);
-      wallDist         = g.wallDist;
-      wallAdjacent     = g.wallAdjacent;
-      linkMask         = g.linkMask;
-      linkQ            = g.linkQ;
-      solidList        = g.solidList;
-      fluidSurfaceList = g.fluidSurfaceList;
-      const bCtx = bodyCanvas.getContext('2d');
-      bCtx.clearRect(0, 0, bCtx.canvas.width, bCtx.canvas.height);
-      
-      if (bodyType === 'nozzle') {
-        setNozzleInlet(NOZZLE_CY, nozzleDiameter, U_COFLOW);
+      } else if (bodyType === "empty") {
+        const result = buildEmpty(dims);
+        return {
+          g: result.geometry,
+          p: { type: "empty" },
+          charLength: result.charLength
+        };
+
+      } else if (bodyType === "blocks") {
+        const r = defaultBlockMatrix(dims);
+        return {
+          g: r.geometry,
+          p: { type: "blocks", blocks: r.blocks, blockSize: r.blockSize },
+          charLength: r.charLength
+        };
+
+      } else if (bodyType === "nozzle") {
+        const result = buildNozzle(dims, Math.floor(sim.NY / 2), nozzleDiameter);
+        return {
+          g: result.geometry,
+          p: {
+            type: "nozzle",
+            cy: result.cy,
+            diameter: result.diameter,
+            length: result.length
+          },
+          charLength: result.charLength
+        };
+
       } else {
-        clearNozzleInlet();
+        const result = defaultCylinder(dims);
+        return {
+          g: result.geometry,
+          p: {
+            type: "cylinder",
+            cx: Math.floor(sim.NX / 4),
+            cy: Math.floor(sim.NY / 2),
+            radius: Math.max(4, Math.floor(sim.NY / 8))
+          },
+          charLength: result.charLength
+        };
       }
-      
-      if (bodyType !== 'empty') drawBodyVector(p);
-      redrawWalls();
+    } 
+   function applyGeometry(sim, { g, p, charLength }) {
+    setCharacteristicLength(sim, charLength);
+
+    sim.solidBase        = g.solid;
+    sim.solid            = new Uint8Array(g.solid);
+    sim.wallDist         = g.wallDist;
+    sim.wallAdjacent     = g.wallAdjacent;
+    sim.linkMask         = g.linkMask;
+    sim.linkQ            = g.linkQ;
+    sim.solidList        = g.solidList;
+    sim.fluidSurfaceList = g.fluidSurfaceList;
+
+    // Guard — bodyRenderer/userDraw may not exist yet during
+    // the first buildGeometry call (they're created in rAF)
+    if (sim.bodyRenderer) {
+      sim.bodyRenderer.clear();
+      if (sim.params.bodyType !== 'empty') sim.bodyRenderer.draw(p);
     }
 
-    function buildGeometry() { applyGeometry(resolveGeometry()); }
+    if (sim.nozzle) {
+      if (sim.params.bodyType === 'nozzle') {
+        setNozzleInlet(sim, Math.floor(sim.NY / 2), sim.params.nozzleDiameter, U_COFLOW);
+      } else {
+        clearNozzleInlet(sim);
+      }
+    }
 
-    function rebuildGeometryOnly() {
-      clearDrawing(solid, solidBase);
-      const res = resolveGeometry();
-      applyGeometry(res);
-      for (let n = 0; n < N; n++) {
-        if (!solid[n]) continue;
+    if (sim.userDraw) sim.userDraw.redrawWalls();
+  }
+
+    function buildGeometry(sim) {
+      applyGeometry(sim, resolveGeometry(sim));
+    }
+
+    function rebuildGeometryOnly(sim) {
+      sim.userDraw.clearDrawing();
+      const res = resolveGeometry(sim);
+      applyGeometry(sim, res);
+
+      for (let n = 0; n < sim.N; n++) {
+        if (!sim.solid[n]) continue;
         const base = n * Q;
-        for (let i = 0; i < Q; i++) f[base + i] = W[i];
+        for (let i = 0; i < Q; i++) sim.f[base + i] = W[i];
       }
     }
 
-    // ── SIM STATE ───────────────────────────────────────────
-    let u0            = 0.1732
-    let reynolds      = parseFloat(document.getElementById('re-slider').value);
-    let displayMode   = 'speed';
-    let colorScale    = parseFloat(document.getElementById('scale-slider').value);
-    let stepsPerFrame = parseInt(document.getElementById('steps-slider').value, 10);
-    let running       = true;
-    let frameCount    = 0;
-    let showVectors   = false;
-    let showGrid      = false;
-    let gridFine      = true;
-    let showDist      = false;
-    let sandboxActive = false;
-    let sandboxMode   = 'draw';
-    let isDrawing     = false;
-
-    function resetSim() {
-      clearDrawing(solid, solidBase);
-      buildGeometry();
-      setReynolds(reynolds);
-      initField(u0, solid);
-      frameCount = 0;
-      applyBoundaryConditions(u0, solid);
+    function resetSim(sim) {
+      if (sim.userDraw) sim.userDraw.clearDrawing();
+      buildGeometry(sim);           // sets solid/linkMask etc + draws body
+      setReynolds(sim, sim.params.reynolds);
+      initField(sim, sim.params.u0, sim.solid);
+      sim.runtime.frameCount = 0;
+      applyBoundaryConditions(sim, sim.params.u0);
     }
 
-    resetSim();
+    // ── COMPARE BUTTON ────────────────────────────────────────
+    const compareBtn     = document.getElementById('compare-btn');
+    const canvasWrap2    = document.getElementById('canvas-wrap-2');
+    const target1Btn    = document.getElementById('flow-label-1');
+    const target2Btn    = document.getElementById('flow-label-2');
+    const flowTargetBar = document.getElementById('flow-target-bar');
+    const gridGroup = ["grid-low", "grid-mid", "grid-high"];
 
-    // ── HELPER ──────────────────────────────────────────────
+
+        // Which sims the control panel currently drives
+    // In single mode: [sim1]. In compare mode: subset of [sim1, sim2]
+    // based on which Flow buttons are active.
+    let compareMode = false;
+    let target1Active = true;  // Flow 1 button state
+    let target2Active = true;  // Flow 2 button state (both on = sync)
+
+    // Returns the list of sims the control panel currently targets
+    function targetedSims() {
+      if (!compareMode) return [sim1];
+      const out = [];
+      if (target1Active && sim1) out.push(sim1);
+      if (target2Active && sim2) out.push(sim2);
+      return out;
+    }
+
+    function forEachSim(fn) {
+      if (sim1) fn(sim1);
+      if (sim2) fn(sim2);
+    }
+    function forAllSims(fn) {
+      if (sim1 && sim1.solid) fn(sim1);
+      if (compareMode && sim2 && sim2.solid) fn(sim2);
+    }
+
+    // Add this helper
+    function dropFidelity(currentKey) {
+      if (currentKey === 'high') return 'mid';
+      return 'low'; // mid→low, low→low
+    }
+    function raiseFidelity(currentKey) {
+      if (currentKey === 'low') return 'mid';
+      return 'high'; // mid→high, high→high
+    }
+
+
+
+
+// Show/hide and sync canvas overlay buttons with compare mode
+    function updateFlowLabels() {
+      flowTargetBar.style.display = compareMode ? '' : 'none';
+      target1Btn.classList.toggle('active', target1Active);
+      target2Btn.classList.toggle('active', target2Active);
+    }
+
+
+    target1Btn.addEventListener('click', () => {
+      if (target1Active && !target2Active) return; // can't deactivate last one
+      target1Active = !target1Active;
+      updateFlowLabels();
+    });
+
+    target2Btn.addEventListener('click', () => {
+      if (target2Active && !target1Active) return;
+      target2Active = !target2Active;
+      updateFlowLabels();
+    });
+
+    compareBtn.addEventListener('click', () => {
+      compareMode = !compareMode;
+      compareBtn.classList.toggle('active', compareMode);
+      canvasWrap2.style.display    = compareMode ? '' : 'none';
+
+      if (compareMode) {
+        canvasWrap2.offsetWidth;
+
+        const droppedKey = dropFidelity(currentGridKey);
+        if (droppedKey !== currentGridKey) {
+          currentGridKey = droppedKey;
+          setActiveBtn(gridGroup, `grid-${droppedKey}`);
+          updateGridStats();
+        }
+
+        const currentBodyType = sim1 ? sim1.params.bodyType : 'airfoil';
+        const currentAoaDeg   = sim1 ? sim1.params.aoaDeg   : 10;
+
+        sim1 = createSim('sim1', currentBodyType, currentAoaDeg);
+        setupSim(sim1, 'flow-canvas-1', 'body-canvas-1', 'wall-canvas-1');
+
+        sim2 = createSim('sim2', currentBodyType, currentAoaDeg);
+        setupSim(sim2, 'flow-canvas-2', 'body-canvas-2', 'wall-canvas-2');
+        updateFlowLabels();
+
+      } else {
+        const raisedKey = raiseFidelity(currentGridKey);
+        if (raisedKey !== currentGridKey) {
+          currentGridKey = raisedKey;
+          setActiveBtn(gridGroup, `grid-${raisedKey}`);
+          updateGridStats();
+          updateFlowLabels();
+        }
+
+        const currentBodyType = sim1 ? sim1.params.bodyType : 'airfoil';
+        const currentAoaDeg   = sim1 ? sim1.params.aoaDeg   : 10;
+
+        sim1 = createSim('sim1', currentBodyType, currentAoaDeg);
+        setupSim(sim1, 'flow-canvas-1', 'body-canvas-1', 'wall-canvas-1');
+
+        sim2 = null;
+        target1Active = true;
+        target2Active = true;
+        target1Btn.classList.add('active');
+        target2Btn.classList.add('active');
+      }
+    });
+
+
+
     function setActiveBtn(ids, activeId) {
-      ids.forEach(id => document.getElementById(id).classList.remove('active'));
-      document.getElementById(activeId).classList.add('active');
+      ids.forEach(id => document.getElementById(id).classList.remove("active"));
+      document.getElementById(activeId).classList.add("active");
     }
 
-    // ── FLOW ────────────────────────────────────────────────
-    document.getElementById('u0-slider').addEventListener('input', e => {
-      u0 = parseFloat(e.target.value);
-      document.getElementById('u0-value').textContent = `Ma ${(u0 / CS_LATTICE).toFixed(2)}`;
-    });
-
-    // Set initial display
-    document.getElementById('u0-value').textContent = `Ma ${(u0 / CS_LATTICE).toFixed(2)}`;
-    document.getElementById('re-slider').addEventListener('input', e => {
-      reynolds = parseFloat(e.target.value);
-      document.getElementById('re-value').textContent = reynolds.toFixed(0);
-      setReynolds(reynolds);
-    });
-    document.getElementById('steps-slider').addEventListener('input', e => {
-      stepsPerFrame = parseInt(e.target.value, 10);
-      document.getElementById('steps-value').textContent = stepsPerFrame;
-    });
-    document.getElementById('scale-slider').addEventListener('input', e => {
-      colorScale = parseFloat(e.target.value);
-      document.getElementById('scale-value').textContent = colorScale.toFixed(3);
-    });
-
-    // ── FIELD MODE ───────────────────────────────────────────
-    const modeGroup = ['mode-speed', 'mode-qcrit'];
-    document.getElementById('mode-speed').addEventListener('click', () => {
-      displayMode = 'speed'; setActiveBtn(modeGroup, 'mode-speed');
-    });
-    document.getElementById('mode-qcrit').addEventListener('click', () => {
-      displayMode = 'qcrit'; setActiveBtn(modeGroup, 'mode-qcrit');
-    });
-
-    // ── OVERLAYS ─────────────────────────────────────────────
-    document.getElementById('vector-btn').addEventListener('click', () => {
-      showVectors = !showVectors;
-      document.getElementById('vector-btn').classList.toggle('active', showVectors);
-    });
-    document.getElementById('dist-btn').addEventListener('click', () => {
-      const on = !showGrid;
-      showGrid = on; gridFine = on; showDist = on;
-      document.getElementById('dist-btn').classList.toggle('active', on);
-    });
-
-    // ── BODY ─────────────────────────────────────────────────
-    const bodyGroup = ['body-airfoil','body-blocks','body-cylinder','body-empty','body-nozzle'];
-    const aoaRow    = document.getElementById('aoa-row');
-    const nozzleRow    = document.getElementById('nozzle-row');
-    const nozzleSlider = document.getElementById('nozzle-slider');
-    const nozzleOutput = document.getElementById('nozzle-value');
-
-    function switchBody(type, btnId) {
-      bodyType = type;
-      setActiveBtn(bodyGroup, btnId);
-      aoaRow.style.display    = type === 'airfoil' ? '' : 'none';
-      nozzleRow.style.display = type === 'nozzle'  ? '' : 'none';
-      rebuildGeometryOnly();
-    }
-
-    document.getElementById('body-cylinder').addEventListener('click', () => switchBody('cylinder','body-cylinder'));
-    document.getElementById('body-airfoil' ).addEventListener('click', () => switchBody('airfoil', 'body-airfoil'));
-    document.getElementById('body-blocks'  ).addEventListener('click', () => switchBody('blocks',  'body-blocks'));
-    document.getElementById('body-empty'   ).addEventListener('click', () => switchBody('empty',   'body-empty'));
-    document.getElementById('body-nozzle'  ).addEventListener('click', () => switchBody('nozzle', 'body-nozzle'));
-
-
-    document.getElementById('aoa-slider').addEventListener('input', e => {
-      aoaDeg = parseFloat(e.target.value);
-      document.getElementById('aoa-value').textContent = aoaDeg.toFixed(1) + '°';
-      rebuildGeometryOnly();
-    });
-
-
-
-    nozzleSlider.addEventListener('input', () => {
-      nozzleDiameter = parseInt(nozzleSlider.value, 10);
-      nozzleOutput.textContent = nozzleDiameter;
-      // Update the live nozzle inlet split immediately
-      setNozzleInlet(NOZZLE_CY, nozzleDiameter, U_COFLOW);
-      rebuildGeometryOnly();
-    });
-
-    // ── SANDBOX ──────────────────────────────────────────────
-    const sandboxBtn = document.getElementById('sandbox-btn');
-    const clearBtn   = document.getElementById('clear-btn');
-
-    sandboxBtn.addEventListener('click', () => {
-      sandboxActive = !sandboxActive;
-      sandboxBtn.classList.toggle('active', sandboxActive);
-      canvas.style.cursor = sandboxActive ? 'crosshair' : 'default';
-    });
-
-    clearBtn.addEventListener('click', () => {
-      clearDrawing(solid, solidBase);
-      redrawWalls();
-    });
-
-    // ── CONTROLS ─────────────────────────────────────────────
-    const pauseBtn = document.getElementById('pause-btn');
-    pauseBtn.addEventListener('click', () => {
-      running = !running;
-      pauseBtn.textContent = running ? 'Pause' : 'Resume';
-      pauseBtn.classList.toggle('active', !running);
-    });
-    document.getElementById('reset-btn').addEventListener('click', resetSim);
-
-    // ── CANVAS INPUT ─────────────────────────────────────────
-    function canvasToLattice(clientX, clientY) {
+   function canvasToLattice(canvas, clientX, clientY, sim) {
       const rect = canvas.getBoundingClientRect();
       return {
-        lx: (clientX - rect.left) * (NX / rect.width),
-        ly: (clientY - rect.top)  * (NY / rect.height),
+        lx: (clientX - rect.left) * (sim.NX / rect.width),
+        ly: (clientY - rect.top) * (sim.NY / rect.height),
       };
     }
 
-    canvas.addEventListener('mousedown', e => {
-      if (!sandboxActive || e.button !== 0) return;
-      isDrawing = true;
-      const { lx, ly } = canvasToLattice(e.clientX, e.clientY);
-      beginStroke(lx, ly);
-      paintStroke(lx, ly, solid, sandboxMode);
-      redrawWalls();
-    });
-    canvas.addEventListener('mousemove', e => {
-      if (!sandboxActive || !isDrawing) return;
-      const { lx, ly } = canvasToLattice(e.clientX, e.clientY);
-      paintStroke(lx, ly, solid, sandboxMode);
-      redrawWalls();
-    });
-    canvas.addEventListener('mouseup', () => {
-      isDrawing = false; endStroke(sandboxMode); redrawWalls();
-    });
-    canvas.addEventListener('mouseleave', () => {
-      isDrawing = false; endStroke(sandboxMode); redrawWalls();
-    });
-    canvas.addEventListener('touchstart', e => {
-      if (!sandboxActive) return;
-      e.preventDefault(); isDrawing = true;
-      const { lx, ly } = canvasToLattice(e.touches[0].clientX, e.touches[0].clientY);
-      beginStroke(lx, ly);
-      paintStroke(lx, ly, solid, sandboxMode);
-      redrawWalls();
-    }, { passive: false });
-    canvas.addEventListener('touchmove', e => {
-      if (!sandboxActive || !isDrawing) return;
-      e.preventDefault();
-      const { lx, ly } = canvasToLattice(e.touches[0].clientX, e.touches[0].clientY);
-      paintStroke(lx, ly, solid, sandboxMode);
-      redrawWalls();
-    }, { passive: false });
-    canvas.addEventListener('touchend', () => {
-      isDrawing = false; endStroke(sandboxMode); redrawWalls();
-    });
+    function bindCanvasInput(sim) {
+      let isDrawing = false;
+      const canvas = sim.flowCanvas;
+      const draw = sim.userDraw;
 
-    // ── FRAME LOOP ───────────────────────────────────────────
-    function stepOnce() {
-      collideFused(solid, wallAdjacent, wallDist, u0);
-      stream(solid, solidList, linkMask, linkQ, fluidSurfaceList, paintedNodes);
-      applyBoundaryConditions(u0, solid);
-      frameCount++;
+      canvas.addEventListener("mousedown", e => {
+        if (!sandboxActive || e.button !== 0) return;
+        isDrawing = true;
+        const { lx, ly } = canvasToLattice(canvas, e.clientX, e.clientY, sim);
+        draw.beginStroke(lx, ly);
+        draw.paintStroke(lx, ly, sandboxMode);
+        draw.redrawWalls();
+      });
+
+      canvas.addEventListener("mousemove", e => {
+        if (!sandboxActive || !isDrawing) return;
+        const { lx, ly } = canvasToLattice(canvas, e.clientX, e.clientY, sim);
+        draw.paintStroke(lx, ly, sandboxMode);
+        draw.redrawWalls();
+      });
+
+      canvas.addEventListener("mouseup", () => {
+        isDrawing = false;
+        draw.endStroke(sandboxMode);
+        draw.redrawWalls();
+      });
+
+      canvas.addEventListener("mouseleave", () => {
+        isDrawing = false;
+        draw.endStroke(sandboxMode);
+        draw.redrawWalls();
+      });
+
+      canvas.addEventListener("touchstart", e => {
+        if (!sandboxActive) return;
+        e.preventDefault();
+        isDrawing = true;
+        const { lx, ly } = canvasToLattice(canvas, e.touches[0].clientX, e.touches[0].clientY, sim);
+        draw.beginStroke(lx, ly);
+        draw.paintStroke(lx, ly, sandboxMode);
+        draw.redrawWalls();
+      }, { passive: false });
+
+      canvas.addEventListener("touchmove", e => {
+        if (!sandboxActive || !isDrawing) return;
+        e.preventDefault();
+        const { lx, ly } = canvasToLattice(canvas, e.touches[0].clientX, e.touches[0].clientY, sim);
+        draw.paintStroke(lx, ly, sandboxMode);
+        draw.redrawWalls();
+      }, { passive: false });
+
+      canvas.addEventListener("touchend", () => {
+        isDrawing = false;
+        draw.endStroke(sandboxMode);
+        draw.redrawWalls();
+      });
+    } 
+
+    function recreateSims() {
+      sim1 = createSim('sim1', sim1 ? sim1.params.bodyType : 'airfoil',
+                              sim1 ? sim1.params.aoaDeg   : 10);
+      setupSim(sim1, 'flow-canvas-1', 'body-canvas-1', 'wall-canvas-1');
+      // bindCanvasInput(sim1);
+      // resetSim(sim1);
+
+      // Only recreate sim2 if compare mode is already active
+      if (compareMode) {
+        sim2 = createSim('sim2', sim2 ? sim2.params.bodyType : 'cylinder',
+                                  sim2 ? sim2.params.aoaDeg   : 0);
+        setupSim(sim2, 'flow-canvas-2', 'body-canvas-2', 'wall-canvas-2');
+        // bindCanvasInput(sim2);
+        // resetSim(sim2);
+      }
+
+      updateGridStats();
     }
 
-    let lastTime    = performance.now();
+    document.getElementById("aoa-row").style.display = "";
+
+    document.getElementById("u0-slider").addEventListener("input", e => {
+      const u0 = parseFloat(e.target.value);
+      document.getElementById("u0-value").textContent = `Ma ${(u0 / CS_LATTICE).toFixed(2)}`;
+      targetedSims().forEach(sim => {
+        sim.params.u0 = u0;
+      });
+    });
+
+    document.getElementById("re-slider").addEventListener("input", e => {
+      const reynolds = parseFloat(e.target.value);
+      document.getElementById("re-value").textContent = reynolds.toFixed(0);
+      targetedSims().forEach(sim => {
+        sim.params.reynolds = reynolds;
+        setReynolds(sim, reynolds);
+      });
+    });
+
+    document.getElementById("steps-slider").addEventListener("input", e => {
+      const steps = parseInt(e.target.value, 10);
+      document.getElementById("steps-value").textContent = steps;
+      // Always apply to ALL sims, not just targeted ones
+      forAllSims(sim => { sim.runtime.stepsPerFrame = steps; });
+    });
+
+    document.getElementById("scale-slider").addEventListener("input", e => {
+      const scale = parseFloat(e.target.value);
+      document.getElementById("scale-value").textContent = scale.toFixed(3);
+      targetedSims().forEach(sim => {
+        sim.display.colorScale = scale;
+      });
+    });
+
+    const modeGroup = ["mode-speed", "mode-qcrit"];
+    document.getElementById("mode-speed").addEventListener("click", () => {
+      setActiveBtn(modeGroup, "mode-speed");
+      targetedSims().forEach(sim => sim.display.mode = "speed");
+    });
+    document.getElementById("mode-qcrit").addEventListener("click", () => {
+      setActiveBtn(modeGroup, "mode-qcrit");
+      targetedSims().forEach(sim => sim.display.mode = "qcrit");
+    });
+
+    document.getElementById("vector-btn").addEventListener("click", () => {
+      const next = !(sim1 && sim1.display.showVectors);
+      document.getElementById("vector-btn").classList.toggle("active", next);
+      targetedSims().forEach(sim => sim.display.showVectors = next);
+    });
+
+    document.getElementById("dist-btn").addEventListener("click", () => {
+      const on = !(sim1 && sim1.display.showGrid);
+      document.getElementById("dist-btn").classList.toggle("active", on);
+      targetedSims().forEach(sim => {
+        sim.display.showGrid = on;
+        sim.display.gridFine = on;
+        sim.display.showDist = on;
+      });
+    }); 
+
+   const bodyGroup = ["body-airfoil", "body-blocks", "body-cylinder", "body-empty", "body-nozzle"];
+
+
+    const aoaRow = document.getElementById("aoa-row");
+    const nozzleRow = document.getElementById("nozzle-row");
+    const nozzleSlider = document.getElementById("nozzle-slider");
+    const nozzleOutput = document.getElementById("nozzle-value");
+
+    function switchBody(type, btnId) {
+      setActiveBtn(bodyGroup, btnId);
+      aoaRow.style.display = type === "airfoil" ? "" : "none";
+      nozzleRow.style.display = type === "nozzle" ? "" : "none";
+
+      targetedSims().forEach(sim => {
+        sim.params.bodyType = type;
+        rebuildGeometryOnly(sim);
+      });
+    }
+
+    document.getElementById("body-cylinder").addEventListener("click", () => switchBody("cylinder", "body-cylinder"));
+    document.getElementById("body-airfoil").addEventListener("click", () => switchBody("airfoil", "body-airfoil"));
+    document.getElementById("body-blocks").addEventListener("click", () => switchBody("blocks", "body-blocks"));
+    document.getElementById("body-empty").addEventListener("click", () => switchBody("empty", "body-empty"));
+    document.getElementById("body-nozzle").addEventListener("click", () => switchBody("nozzle", "body-nozzle"));
+
+    document.getElementById("aoa-slider").addEventListener("input", e => {
+      const aoaDeg = parseFloat(e.target.value);
+      document.getElementById("aoa-value").textContent = aoaDeg.toFixed(1) + "°";
+      targetedSims().forEach(sim => {
+        sim.params.aoaDeg = aoaDeg;
+        if (sim.params.bodyType === "airfoil") rebuildGeometryOnly(sim);
+      });
+    });
+
+    nozzleSlider.addEventListener("input", () => {
+      const nozzleDiameter = parseInt(nozzleSlider.value, 10);
+      nozzleOutput.textContent = nozzleDiameter;
+      targetedSims().forEach(sim => {
+        sim.params.nozzleDiameter = nozzleDiameter;
+        if (sim.params.bodyType === "nozzle") {
+          setNozzleInlet(sim, Math.floor(sim.NY / 2), nozzleDiameter, U_COFLOW);
+          rebuildGeometryOnly(sim);
+        }
+      });
+    });
+
+    document.getElementById("grid-low").addEventListener("click", () => {
+      currentGridKey = "low";
+      setActiveBtn(gridGroup, "grid-low");
+      recreateSims();
+    });
+
+    document.getElementById("grid-mid").addEventListener("click", () => {
+      currentGridKey = "mid";
+      setActiveBtn(gridGroup, "grid-mid");
+      recreateSims();
+    });
+
+    document.getElementById("grid-high").addEventListener("click", () => {
+      currentGridKey = "high";
+      setActiveBtn(gridGroup, "grid-high");
+      recreateSims();
+    });
+
+    const sandboxBtn = document.getElementById("sandbox-btn");
+    const clearBtn = document.getElementById("clear-btn");
+
+    sandboxBtn.addEventListener("click", () => {
+      sandboxActive = !sandboxActive;
+      sandboxBtn.classList.toggle("active", sandboxActive);
+      if (sim1) sim1.flowCanvas.style.cursor = sandboxActive ? "crosshair" : "default";
+      if (sim2) sim2.flowCanvas.style.cursor = sandboxActive ? "crosshair" : "default";
+    });
+
+    clearBtn.addEventListener("click", () => {
+      targetedSims().forEach(sim => {
+        sim.userDraw.clearDrawing();
+        sim.userDraw.redrawWalls();
+      });
+    });
+
+    const pauseBtn = document.getElementById("pause-btn");
+    pauseBtn.addEventListener("click", () => {
+      const next = !(sim1 && sim1.runtime.running);
+      pauseBtn.textContent = next ? "Pause" : "Resume";
+      pauseBtn.classList.toggle("active", !next);
+      targetedSims().forEach(sim => sim.runtime.running = next);
+    });
+
+    document.getElementById("reset-btn").addEventListener("click", () => {
+      if (sim1) resetSim(sim1);
+      if (sim2) resetSim(sim2);
+    }); 
+
+function stepOnce(sim) {
+  if (!sim || !sim.solid || !sim.userDraw) return;
+  collideFused(sim, sim.params.u0);
+  stream(sim);
+  applyBoundaryConditions(sim, sim.params.u0);
+  sim.runtime.frameCount++;
+}
+
+    let lastTime = performance.now();
     let smoothedFps = 60;
-    const fpsSmoothing = 0.9;
 
     function tick(now) {
       const dt = now - lastTime;
       lastTime = now;
       smoothedFps = 0.9 * smoothedFps + 0.1 * (dt > 0 ? 1000 / dt : 60);
 
-      if (running) {
-        for (let s = 0; s < stepsPerFrame; s++) stepOnce();
-      }
+      forAllSims(sim => {
+        if (sim.runtime.running) {
+          for (let s = 0; s < sim.runtime.stepsPerFrame; s++) stepOnce(sim);
+        }
+        sim.renderer.draw(
+          { ux: sim.ux, uy: sim.uy, f: sim.f },
+          sim.solid, sim.rho,
+          { mode: sim.display.mode, scale: sim.display.colorScale,
+            autoScale: false, showVectors: sim.display.showVectors,
+            showGrid: sim.display.showGrid, gridFine: sim.display.gridFine,
+            showDist: sim.display.showDist },
+          sim.paintedNodes
+        );
+      });
 
-      renderer.draw(
-        { ux, uy }, solid, rho,
-        { mode: displayMode, scale: colorScale, autoScale: false,
-          showVectors, showGrid, gridFine, showDist },
-        paintedNodes
-      );
-
-      document.getElementById('fps-value').textContent   = smoothedFps.toFixed(0);
-      document.getElementById('frame-value').textContent = frameCount.toString();
+      document.getElementById('fps-value').textContent = smoothedFps.toFixed(0);
+      document.getElementById('frame-value').textContent =
+        `${sim1 ? sim1.runtime.frameCount : 0}${sim2 ? ' / ' + sim2.runtime.frameCount : ''}`;
       requestAnimationFrame(tick);
     }
 
-    // ── TOOLTIPS ─────────────────────────────────────────────
-    const tooltip = document.getElementById('tooltip');
-
-    document.querySelectorAll('.tooltip-trigger').forEach(el => {
-      el.addEventListener('mouseenter', (e) => {
+    const tooltip = document.getElementById("tooltip");
+    document.querySelectorAll(".tooltip-trigger").forEach(el => {
+      el.addEventListener("mouseenter", e => {
         tooltip.textContent = el.dataset.tip;
-        tooltip.classList.add('visible');
+        tooltip.classList.add("visible");
         positionTooltip(e);
       });
-      el.addEventListener('mousemove', positionTooltip);
-      el.addEventListener('mouseleave', () => {
-        tooltip.classList.remove('visible');
+      el.addEventListener("mousemove", positionTooltip);
+      el.addEventListener("mouseleave", () => {
+        tooltip.classList.remove("visible");
       });
     });
 
     function positionTooltip(e) {
       const pad = 14;
-      const tw  = tooltip.offsetWidth  || 280;
-      const th  = tooltip.offsetHeight || 80;
+      const tw = tooltip.offsetWidth || 280;
+      const th = tooltip.offsetHeight || 80;
       let x = e.clientX + pad;
       let y = e.clientY + pad;
-      // Flip left if it would overflow right edge
-      if (x + tw > window.innerWidth  - pad) x = e.clientX - tw - pad;
-      // Flip up if it would overflow bottom edge
+      if (x + tw > window.innerWidth - pad) x = e.clientX - tw - pad;
       if (y + th > window.innerHeight - pad) y = e.clientY - th - pad;
-      tooltip.style.left = x + 'px';
-      tooltip.style.top  = y + 'px';
+      tooltip.style.left = x + "px";
+      tooltip.style.top  = y + "px";
     }
 
+    document.getElementById("u0-value").textContent =
+      `Ma ${(parseFloat(document.getElementById("u0-slider").value) / CS_LATTICE).toFixed(2)}`;
+    document.getElementById("re-value").textContent =
+      parseFloat(document.getElementById("re-slider").value).toFixed(0);
+    document.getElementById("steps-value").textContent =
+      parseInt(document.getElementById("steps-slider").value, 10);
+    document.getElementById("scale-value").textContent =
+      parseFloat(document.getElementById("scale-slider").value).toFixed(3);
+    document.getElementById("aoa-value").textContent =
+      parseFloat(document.getElementById("aoa-slider").value).toFixed(1) + "°";
+    document.getElementById("nozzle-value").textContent =
+      parseInt(document.getElementById("nozzle-slider").value, 10);
+
+    updateGridStats();
+    recreateSims();
     requestAnimationFrame(tick);
   </script>
 </body>
-</html>
+</html> 

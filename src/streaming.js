@@ -1,21 +1,26 @@
-// src/streaming.js  (V3 — SDF BFL reconstruction)
+// src/streaming.js
+// ============================================================
+// Compare-mode ready streaming.
+// Updated for global fidelity presets: no fixed NX/NY imports.
 // ============================================================
 
-import { NX, NY, N, Q, CX, CY, OPP, f } from "./lbm.js";
-const fSnapshot = new Float32Array(Q * N);
+import { CX, CY, OPP } from "./lbm.js";
 
 // ---------------------------------------------------------
-// stream(solid, solidList, linkMask, linkQ)
+// stream(sim)
 // ---------------------------------------------------------
-export function stream(solid, solidList, linkMask, linkQ, fluidSurfaceList, paintedNodes) {
-  streamInPlace();
-  applyBFL(linkMask, linkQ, fluidSurfaceList);
-  bounceBackNodes(paintedNodes);
+export function stream(sim) {
+  streamInPlace(sim);
+  applyBFL(sim);
+  bounceBackNodes(sim);
 }
+
 // ---------------------------------------------------------
-// streamInPlace()
+// streamInPlace(sim)
 // ---------------------------------------------------------
-function streamInPlace() {
+function streamInPlace(sim) {
+  const { NX, NY, Q, f } = sim;
+
   // Pass 1: N(2) + NW(6), sweep top→bottom, left→right
   for (let y = NY - 2; y >= 1; y--) {
     const rowDst = y * NX;
@@ -25,6 +30,7 @@ function streamInPlace() {
       f[(rowDst + x) * Q + 6] = f[(rowSrc + x + 1) * Q + 6];
     }
   }
+
   // Pass 2: E(1) + NE(5), sweep top→bottom, right→left
   for (let y = NY - 2; y >= 1; y--) {
     const rowDst = y * NX;
@@ -34,6 +40,7 @@ function streamInPlace() {
       f[(rowDst + x) * Q + 5] = f[(rowSrc + x - 1) * Q + 5];
     }
   }
+
   // Pass 3: S(4) + SE(8), sweep bottom→top, right→left
   for (let y = 1; y < NY - 1; y++) {
     const rowDst = y * NX;
@@ -43,6 +50,7 @@ function streamInPlace() {
       f[(rowDst + x) * Q + 8] = f[(rowSrc + x - 1) * Q + 8];
     }
   }
+
   // Pass 4: W(3) + SW(7), sweep bottom→top, left→right
   for (let y = 1; y < NY - 1; y++) {
     const rowDst = y * NX;
@@ -55,9 +63,13 @@ function streamInPlace() {
 }
 
 // ---------------------------------------------------------
-// applyBFL(solid, linkMask, linkQ)
+// applyBFL(sim)
 // ---------------------------------------------------------
-function applyBFL(linkMask, linkQ, fluidSurfaceList) {
+function applyBFL(sim) {
+  const { NX, NY, Q, f, fSnapshot, linkMask, linkQ, fluidSurfaceList } = sim;
+
+  if (!fluidSurfaceList || !linkMask || !linkQ) return;
+
   fSnapshot.set(f);
 
   for (let k = 0; k < fluidSurfaceList.length; k++) {
@@ -83,6 +95,7 @@ function applyBFL(linkMask, linkQ, fluidSurfaceList) {
         const fOppBehind = (xb >= 0 && xb < NX && yb >= 0 && yb < NY)
           ? fSnapshot[(yb * NX + xb) * Q + opp]
           : fOppHere;
+
         const inv1p2q = 1.0 / (1.0 + 2.0 * q);
         f[off] = inv1p2q * fOppHere + (2.0 * q * inv1p2q) * fOppBehind;
 
@@ -92,6 +105,7 @@ function applyBFL(linkMask, linkQ, fluidSurfaceList) {
         const fOppAhead = (xa >= 0 && xa < NX && ya >= 0 && ya < NY)
           ? fSnapshot[(ya * NX + xa) * Q + opp]
           : fOppHere;
+
         const inv2q = 1.0 / (2.0 * q);
         f[off] = inv2q * fOppHere + (1.0 - inv2q) * fOppAhead;
       }
@@ -99,13 +113,21 @@ function applyBFL(linkMask, linkQ, fluidSurfaceList) {
   }
 }
 
-function bounceBackNodes(paintedNodes) {
+// ---------------------------------------------------------
+// bounceBackNodes(sim)
+// ---------------------------------------------------------
+function bounceBackNodes(sim) {
+  const { Q, f, paintedNodes } = sim;
+
   for (const n of paintedNodes) {
     const base = n * Q;
     let tmp;
-    tmp = f[base+1]; f[base+1] = f[base+3]; f[base+3] = tmp;
-    tmp = f[base+2]; f[base+2] = f[base+4]; f[base+4] = tmp;
-    tmp = f[base+5]; f[base+5] = f[base+7]; f[base+7] = tmp;
-    tmp = f[base+6]; f[base+6] = f[base+8]; f[base+8] = tmp;
+
+    tmp = f[base + 1]; f[base + 1] = f[base + 3]; f[base + 3] = tmp;
+    tmp = f[base + 2]; f[base + 2] = f[base + 4]; f[base + 4] = tmp;
+    tmp = f[base + 5]; f[base + 5] = f[base + 7]; f[base + 7] = tmp;
+    tmp = f[base + 6]; f[base + 6] = f[base + 8]; f[base + 8] = tmp;
   }
 }
+
+

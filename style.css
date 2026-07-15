@@ -7,24 +7,19 @@
   --panel:        rgba(10,16,26,0.95);
   --border:       rgba(80,160,255,0.12);
   --border-hi:    rgba(80,160,255,0.28);
-
   --txt:          #c8d8f0;
   --txt-dim:      #4a6080;
   --txt-muted:    #2a3a50;
-
   --cyan:         #38c8ff;
   --cyan-glow:    rgba(56,200,255,0.22);
   --cyan-dim:     rgba(56,200,255,0.07);
-
   --active-bg:    rgba(56,200,255,0.12);
   --active-border:rgba(56,200,255,0.5);
   --danger:       #ff4466;
   --danger-glow:  rgba(255,68,102,0.18);
-
   --radius-sm:    5px;
   --radius:       9px;
   --radius-lg:    12px;
-
   --mono: 'JetBrains Mono', monospace;
 }
 
@@ -90,11 +85,11 @@ html, body {
   letter-spacing: 0.1em;
 }
 
-/* ── MAIN LAYOUT — panel on top, canvas below ───────────── */
+/* ── MAIN LAYOUT ─────────────────────────────────────────── */
 .app-main {
   display: flex;
   flex-direction: column;
-  gap: 10px;   /* ← gap between panel and canvas */
+  gap: 10px;
   flex: 1;
 }
 
@@ -102,7 +97,7 @@ html, body {
 .hud {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);   /* ← all corners rounded */
+  border-radius: var(--radius-lg);
   padding: 10px 16px;
   display: flex;
   flex-wrap: nowrap;
@@ -112,17 +107,50 @@ html, body {
   overflow-x: auto;
 }
 
+/* ── COMPARE LAYOUT ──────────────────────────────────────── */
+/*
+ * Flexbox instead of grid so that when canvas-wrap-2 is
+ * display:none it collapses completely and canvas-wrap-1
+ * expands to fill the full width automatically.
+ * When both are visible they each get flex:1 = equal halves.
+ */
+.compare-wrap {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
 /* ── CANVAS STACK ────────────────────────────────────────── */
+/*
+ * flex:1 on each canvas-wrap means:
+ *   - 1 visible  → takes 100% of compare-wrap width
+ *   - 2 visible  → each takes 50%
+ * min-width:0 prevents flex children from overflowing.
+ */
 .canvas-wrap {
   position: relative;
-  width: 100%;
-  border-radius: var(--radius-lg);   /* ← all corners rounded */
+  flex: 1;
+  min-width: 0;
+  border-radius: var(--radius-lg);
   overflow: hidden;
   border: 1px solid var(--border);
   box-shadow: 0 0 60px rgba(56,200,255,0.03);
+  display: grid;           /* ← use grid instead of position:relative alone */
+  grid-template-rows: auto; /* ← height follows content, not container */
+  align-items: start;      /* ← stack children at top */
 }
 
-#flow-canvas {
+/*
+ * aspect-ratio keeps the canvas at 2:1 (256×128).
+ * width:100% fills the flex cell; height follows aspect-ratio.
+ * When the cell is half the viewport (compare mode), the canvas
+ * naturally shrinks to half — no JS needed.
+ */
+#flow-canvas-1,
+#flow-canvas-2 {
   display: block;
   width: 100%;
   height: auto;
@@ -130,12 +158,16 @@ html, body {
   background: #060a10;
 }
 
-#body-canvas,
-#wall-canvas {
+#body-canvas-1,
+#wall-canvas-1,
+#body-canvas-2,
+#wall-canvas-2 {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
   width: 100%;
-  height: 100%;
+  aspect-ratio: 256 / 128;  /* ← match flow canvas, don't use height:100% */
+  height: auto;              /* ← let aspect-ratio control height */
   pointer-events: none;
 }
 
@@ -265,6 +297,70 @@ html, body {
   box-shadow: 0 0 9px var(--danger-glow);
 }
 
+/* ── SIM INFO / FIDELITY BUTTONS ─────────────────────────── */
+.ctrl-group .btn-grid + .stat {
+  margin-top: 4px;
+}
+
+#grid-low,
+#grid-mid,
+#grid-high {
+  min-width: 54px;
+  text-align: center;
+  font-family: var(--mono);
+  letter-spacing: 0.08em;
+}
+
+/* ── COMPARE TARGET BUTTONS ──────────────────────────────── */
+/*
+ * Flow 1 / Flow 2 buttons get a distinct teal tint when active
+ * so you can see at a glance which canvases the control panel
+ * is currently targeting. Uses the same active-bg/border tokens
+ * but with a slightly warmer glow to differentiate from plain
+ * mode/overlay active buttons.
+ */
+#target-1.active,
+#target-2.active {
+  border-color: var(--cyan);
+  color: var(--cyan);
+  background: var(--active-bg);
+  box-shadow: 0 0 12px var(--cyan-glow), inset 0 0 8px rgba(56,200,255,0.07);
+}
+
+/* ── CANVAS LABEL OVERLAY ────────────────────────────────── */
+/*
+ * Optional: a small "Flow 1" / "Flow 2" label badge
+ * rendered via CSS pseudo-elements on each canvas-wrap
+ * so the user always knows which canvas is which in compare mode.
+ * The data-label attribute is set by index.html JS.
+ */
+.canvas-wrap[data-label]::before {
+  content: attr(data-label);
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  z-index: 10;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  background: rgba(6,10,16,0.75);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-sm);
+  padding: 2px 7px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+/* Only show the label when compare mode is active —
+   toggled by adding .compare-active to .compare-wrap */
+.compare-wrap.compare-active .canvas-wrap[data-label]::before {
+  opacity: 1;
+}
+
 /* ── STATS ───────────────────────────────────────────────── */
 .stats {
   display: flex;
@@ -308,15 +404,6 @@ html, body {
   margin-left: auto;
 }
 
-/* ── RESPONSIVE ──────────────────────────────────────────── */
-@media (max-width: 800px) {
-  .app { padding: 10px 10px 20px; }
-  .hud { flex-wrap: wrap; gap: 8px; }
-  .ctrl-group { border-right: none; padding-right: 0; margin-right: 0; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
-  .ctrl-group:last-child { border-bottom: none; padding-bottom: 0; }
-}
-
-
 /* ── TOOLTIP TRIGGERS ────────────────────────────────────── */
 .tooltip-trigger {
   cursor: default;
@@ -352,27 +439,26 @@ html, body {
   opacity: 1;
 }
 
-
 /* ── CREDIT LINK ─────────────────────────────────────────── */
 .credit {
   font-family: var(--mono);
   font-size: 0.62rem;
-  color: var(--cyan);                      
+  color: var(--cyan);
   letter-spacing: 0.08em;
   text-decoration: none;
   margin-left: auto;
   transition: color 0.15s, text-shadow 0.15s;
-  text-shadow: 0 0 9px var(--cyan-glow), inset 0 0 6px rgba(56,200,255,0.05);  /* ← glow */
+  text-shadow: 0 0 9px var(--cyan-glow);
 }
 
 .credit:hover {
   color: var(--cyan);
   text-shadow: 0 0 9px var(--cyan-glow);
 }
+
 .credit-name {
   text-decoration: underline;
   text-underline-offset: 3px;
-  transition: text-shadow 0.15s;
 }
 
 /* ── FOOTER ──────────────────────────────────────────────── */
@@ -381,7 +467,7 @@ html, body {
   color: var(--txt-dim);
   line-height: 1.8;
   letter-spacing: 0.02em;
-  max-width: 100%;   /* ← remove the 900px cap */
+  max-width: 100%;
   text-align: center;
   margin: 0 auto;
 }
@@ -391,18 +477,6 @@ html, body {
   font-weight: 500;
 }
 
-
-/* ── CANVAS CONTAINER QUERIES ────────────────────────────── */
-.canvas-wrap {
-  position: relative;
-  width: 100%;
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  border: 1px solid var(--border);
-  box-shadow: 0 0 60px rgba(56,200,255,0.03);
-  container-type: inline-size;  /* ← enables cqi units inside */
-}
-
 /* ── HUD WRAPS ON SMALLER SCREENS ───────────────────────── */
 @media (max-width: 1100px) {
   .hud {
@@ -410,16 +484,26 @@ html, body {
     gap: 10px;
     justify-content: flex-start;
   }
+
   .ctrl-group {
     border-right: none;
     border-bottom: 1px solid var(--border);
     padding-bottom: 10px;
     margin-right: 0;
     padding-right: 0;
-    flex: 1 1 160px;  /* ← groups reflow into a grid */
+    flex: 1 1 160px;
   }
+
   .ctrl-group:last-of-type {
     border-bottom: none;
+  }
+}
+
+/* ── TABLET / SMALL DESKTOP ─────────────────────────────── */
+@media (max-width: 900px) {
+  /* Stack canvases vertically on narrow screens even in compare mode */
+  .compare-wrap {
+    flex-direction: column;
   }
 }
 
@@ -431,6 +515,7 @@ html, body {
     flex-direction: column;
     gap: 4px;
   }
+
   .credit { margin-left: 0; }
 
   .hud {
@@ -451,10 +536,89 @@ html, body {
 
   .btn { font-size: 0.62rem; padding: 4px 8px; }
 
+  #grid-low,
+  #grid-mid,
+  #grid-high {
+    min-width: 48px;
+  }
+
   .slider-row { min-width: 100%; }
 
-  /* Canvas overlay stats scale with container width */
   .stat-value { font-size: 0.8rem; }
 
   .footer p { font-size: 0.62rem; }
+}
+
+/* Stacked buttons — vertical column, full width */
+.btn-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.btn-stack .btn {
+  width: 100%;
+  text-align: center;
+}
+
+/* Flow label buttons overlaid on canvas */
+.flow-label-btn {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  pointer-events: auto;
+  backdrop-filter: blur(6px);
+  background: rgba(6,10,16,0.75);
+}
+
+.flow-label-btn.active {
+  border-color: var(--cyan);
+  color: var(--cyan);
+  box-shadow: 0 0 9px var(--cyan-glow);
+}
+
+.flow-target-bar {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.flow-target-bar .btn {
+  flex: 1;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  backdrop-filter: blur(6px);
+}
+
+.sim-info-row {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  align-items: center;
+}
+
+.sim-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.btn-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.btn-stack .btn {
+  width: 100%;
+  text-align: center;
+  font-family: var(--mono);
+  letter-spacing: 0.08em;
 }

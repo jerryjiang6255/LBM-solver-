@@ -1,6 +1,11 @@
-// src/geometry.js  (V4)
+// src/geometry.js
+// ============================================================
+// Compare-mode ready geometry builders.
+// Updated for global fidelity presets: geometry no longer imports
+// fixed NX/NY/N from lbm.js. Dimensions are passed in explicitly.
+// ============================================================
 
-import { NX, NY, N, Q, CX, CY, idx, setCharacteristicLength } from "./lbm.js";
+import { Q, CX, CY } from "./lbm.js";
 
 // BFL q clamping
 const Q_MIN = 0.01;
@@ -13,33 +18,23 @@ function sdfCircle(cx, cy, radius) {
   return (x, y) => Math.sqrt((x - cx) ** 2 + (y - cy) ** 2) - radius;
 }
 
-// ---------------------------------------------------------
-// Empty domain — no obstacle, pure free-stream
-// ---------------------------------------------------------
 function sdfEmpty() {
-  return (x, y) => 1.0;
+  return () => 1.0;
 }
 
-// ---------------------------------------------------------
-// NACA 4-digit thickness distribution
-// ---------------------------------------------------------
 function sdfNACA0012(cx, cy, chord, alpha) {
   const cos_a = Math.cos(alpha);
   const sin_a = Math.sin(alpha);
 
   return (x, y) => {
-    // Translate and rotate into airfoil-local frame
     const dx =  (x - cx) * cos_a + (y - cy) * sin_a;
     const dy = -(x - cx) * sin_a + (y - cy) * cos_a;
 
-    // Normalise to [0,1] chord
-    const xn = dx / chord + 0.5;   // 0 = LE, 1 = TE
+    const xn = dx / chord + 0.5;
     const yn = dy / chord;
 
-    // Outside chord extent — treat as far fluid
     if (xn < 0 || xn > 1) return Math.abs(dx) + Math.abs(dy);
 
-    // NACA 00xx half-thickness formula (xx = 12)
     const t = 0.12;
     const yt = (t / 0.2) * chord * (
        0.2969 * Math.sqrt(xn)
@@ -49,40 +44,26 @@ function sdfNACA0012(cx, cy, chord, alpha) {
       - 0.1015 * xn * xn * xn * xn
     );
 
-    // Signed distance: positive outside, negative inside
     return Math.abs(yn * chord) - yt;
   };
 }
 
-
-// ---------------------------------------------------------
-// Slot nozzle extruding from the inlet wall
-// ---------------------------------------------------------
 function sdfNozzle(cy, diameter, length) {
   const halfD = diameter / 2;
-  const wallThickness = 3; // lattice units — thickness of nozzle walls
+  const wallThickness = 3;
 
   return (x, y) => {
-    // Nozzle walls only exist from x=0 to x=length
     if (x > length) return 1.0;
 
-    // Distance from centerline
     const distFromCenter = Math.abs(y - cy);
 
-    // Inside the nozzle opening — fluid
     if (distFromCenter <= halfD) return 1.0;
-
-    // Inside the wall thickness — solid
     if (distFromCenter <= halfD + wallThickness) return -1.0;
 
-    // Outside the walls — fluid (coflow region)
     return 1.0;
   };
 }
 
-// ---------------------------------------------------------
-// Matrix of square blocks
-// ---------------------------------------------------------
 function sdfExplicitBlocks(blocks, blockSize) {
   const half = blockSize / 2;
 
@@ -91,7 +72,6 @@ function sdfExplicitBlocks(blocks, blockSize) {
     for (let k = 0; k < blocks.length; k++) {
       const lx = Math.abs(x - blocks[k][0]) - half;
       const ly = Math.abs(y - blocks[k][1]) - half;
-      // Box SDF: negative inside, positive outside
       const dist = Math.max(lx, ly);
       if (dist < minDist) minDist = dist;
     }
@@ -100,9 +80,12 @@ function sdfExplicitBlocks(blocks, blockSize) {
 }
 
 // ---------------------------------------------------------
-// buildGeometryFromSDF(sdfFunc)
+// buildGeometryFromSDF(dims, sdfFunc)
 // ---------------------------------------------------------
-function buildGeometryFromSDF(sdfFunc) {
+function buildGeometryFromSDF(dims, sdfFunc) {
+  const { NX, NY } = dims;
+  const N = NX * NY;
+
   const sdf          = new Float32Array(N);
   const solid        = new Uint8Array(N);
   const wallDist     = new Float32Array(N);
@@ -110,9 +93,8 @@ function buildGeometryFromSDF(sdfFunc) {
   const linkMask     = new Uint8Array(Q * N);
   const linkQ        = new Float32Array(Q * N);
   const solidTmp     = [];
-  const fluidTmp     = [];   // ← moved inside the function
+  const fluidTmp     = [];
 
-  // Pass 1
   for (let y = 0; y < NY; y++) {
     for (let x = 0; x < NX; x++) {
       const n     = y * NX + x;
@@ -123,7 +105,6 @@ function buildGeometryFromSDF(sdfFunc) {
     }
   }
 
-  // Pass 2
   for (let y = 0; y < NY; y++) {
     for (let x = 0; x < NX; x++) {
       const n       = y * NX + x;
@@ -140,7 +121,6 @@ function buildGeometryFromSDF(sdfFunc) {
         continue;
       }
 
-      // Fluid node
       const sdfF = sdf[n];
       let isAdj  = 0;
 
@@ -148,6 +128,7 @@ function buildGeometryFromSDF(sdfFunc) {
         const nx = x + CX[i];
         const ny = y + CY[i];
         if (nx < 0 || nx >= NX || ny < 0 || ny >= NY) continue;
+
         const ns = ny * NX + nx;
         if (!solid[ns]) continue;
 
@@ -165,7 +146,7 @@ function buildGeometryFromSDF(sdfFunc) {
       }
 
       wallAdjacent[n] = isAdj;
-      if (isAdj) fluidTmp.push(n);   // ← inside the loop, after isAdj is set
+      if (isAdj) fluidTmp.push(n);
     }
   }
 
@@ -182,29 +163,31 @@ function buildGeometryFromSDF(sdfFunc) {
 }
 
 // ---------------------------------------------------------
-// buildCylinder(cx, cy, radius)
+// Public builders
 // ---------------------------------------------------------
-export function buildCylinder(cx, cy, radius) {
-  setCharacteristicLength(2 * radius);
-  return buildGeometryFromSDF(sdfCircle(cx, cy, radius));
-}
-// ---------------------------------------------------------
-// buildAirfoil(cx, cy, chord, alpha)
-// ---------------------------------------------------------
-export function buildAirfoil(cx, cy, chord, alpha) {
-  setCharacteristicLength(chord);
-  return buildGeometryFromSDF(sdfNACA0012(cx, cy, chord, alpha));
+export function buildCylinder(dims, cx, cy, radius) {
+  return {
+    geometry: buildGeometryFromSDF(dims, sdfCircle(cx, cy, radius)),
+    charLength: 2 * radius,
+  };
 }
 
-export function buildEmpty() {
-  setCharacteristicLength(NY); // use domain height as reference
-  return buildGeometryFromSDF(sdfEmpty());
+export function buildAirfoil(dims, cx, cy, chord, alpha) {
+  return {
+    geometry: buildGeometryFromSDF(dims, sdfNACA0012(cx, cy, chord, alpha)),
+    charLength: chord,
+  };
 }
 
-// ---------------------------------------------------------
-// defaultBlockMatrix()
-// ---------------------------------------------------------
-export function defaultBlockMatrix() {
+export function buildEmpty(dims) {
+  return {
+    geometry: buildGeometryFromSDF(dims, sdfEmpty()),
+    charLength: dims.NY,
+  };
+}
+
+export function defaultBlockMatrix(dims) {
+  const { NX, NY } = dims;
   const blockSize = 4;
 
   const colXs = [
@@ -235,32 +218,40 @@ export function defaultBlockMatrix() {
     for (const y of rows3) blocks.push([x, y]);
   }
 
-  setCharacteristicLength(blockSize * 4);
-  const geometry = buildGeometryFromSDF(sdfExplicitBlocks(blocks, blockSize));
-
-  // Return blocks and blockSize alongside geometry so renderer can draw them
-  return { geometry, blocks, blockSize };
+  return {
+    geometry: buildGeometryFromSDF(dims, sdfExplicitBlocks(blocks, blockSize)),
+    blocks,
+    blockSize,
+    charLength: blockSize * 4,
+  };
 }
 
-// ---------------------------------------------------------
-// defaultCylinder()
-// ---------------------------------------------------------
-export function defaultCylinder() {
+export function defaultCylinder(dims) {
+  const { NX, NY } = dims;
   const cx     = Math.floor(NX / 4);
   const cy     = Math.floor(NY / 2);
   const radius = Math.max(4, Math.floor(NY / 8));
-  return buildCylinder(cx, cy, radius);
+  return buildCylinder(dims, cx, cy, radius);
 }
 
-export function buildNozzle(cy, diameter) {
-  const length = Math.floor(NX * 0.15); // nozzle extends 15% into domain
-  setCharacteristicLength(diameter);
-  const geometry = buildGeometryFromSDF(sdfNozzle(cy, diameter, length));
-  return { geometry, cy, diameter, length };
+export function buildNozzle(dims, cy, diameter) {
+  const { NX } = dims;
+  const length = Math.floor(NX * 0.15);
+
+  return {
+    geometry: buildGeometryFromSDF(dims, sdfNozzle(cy, diameter, length)),
+    cy,
+    diameter,
+    length,
+    charLength: diameter,
+  };
 }
 
-export function defaultNozzle() {
+export function defaultNozzle(dims) {
+  const { NY } = dims;
   const cy       = Math.floor(NY / 2);
-  const diameter = Math.floor(NY / 4); // 25% of domain height
-  return buildNozzle(cy, diameter);
+  const diameter = Math.floor(NY / 4);
+  return buildNozzle(dims, cy, diameter);
 }
+
+
