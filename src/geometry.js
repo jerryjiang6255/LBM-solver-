@@ -3,6 +3,11 @@
 // Compare-mode ready geometry builders.
 // Updated for global fidelity presets: geometry no longer imports
 // fixed NX/NY/N from lbm.js. Dimensions are passed in explicitly.
+//
+// Change 2 additions:
+// - NACA2412 airfoil
+// - tandem cylinders with horizontal spacing
+// - square cylinder with rotation / AoA
 // ============================================================
 
 import { Q, CX, CY } from "./lbm.js";
@@ -23,6 +28,22 @@ function sdfEmpty() {
 }
 
 function sdfNACA0012(cx, cy, chord, alpha) {
+  return sdfNACA4(cx, cy, chord, alpha, 0.0, 0.0, 0.12);
+}
+
+// ---------------------------------------------------------
+// sdfNACA2412(cx, cy, chord, alpha)
+// ---------------------------------------------------------
+function sdfNACA2412(cx, cy, chord, alpha) {
+  return sdfNACA4(cx, cy, chord, alpha, 0.02, 0.4, 0.12);
+}
+
+// ---------------------------------------------------------
+// sdfNACA4(...)
+// ---------------------------------------------------------
+// Approximate SDF-style evaluator for 4-digit NACA airfoils.
+// m = max camber, p = camber position, t = thickness ratio
+function sdfNACA4(cx, cy, chord, alpha, m, p, t) {
   const cos_a = Math.cos(alpha);
   const sin_a = Math.sin(alpha);
 
@@ -31,23 +52,49 @@ function sdfNACA0012(cx, cy, chord, alpha) {
     const dy = -(x - cx) * sin_a + (y - cy) * cos_a;
 
     const xn = dx / chord + 0.5;
-    const yn = dy / chord;
-
     if (xn < 0 || xn > 1) return Math.abs(dx) + Math.abs(dy);
 
-    const t = 0.12;
-    const yt = (t / 0.2) * chord * (
+    // Thickness distribution (in lattice units)
+    let yt = (t / 0.2) * chord * (
        0.2969 * Math.sqrt(xn)
       - 0.1260 * xn
       - 0.3516 * xn * xn
       + 0.2843 * xn * xn * xn
       - 0.1015 * xn * xn * xn * xn
     );
+    if (xn >= 1.0) yt = 0;
 
-    return Math.abs(yn * chord) - yt;
+    // Camber line — in lattice units (multiply by chord, NOT chord²)
+    let yc      = 0.0;
+    let dyc_dxn = 0.0;
+
+    if (m > 0 && p > 0 && p < 1) {
+      if (xn < p) {
+        yc      =  m * chord * (2 * p * xn - xn * xn) / (p * p);
+        dyc_dxn = (2 * m * chord / (p * p)) * (p - xn);
+      } else {
+        const op = 1 - p;
+        yc      =  m * chord * (1 - 2*p + 2*p*xn - xn*xn) / (op * op);
+        dyc_dxn = (2 * m * chord / (op * op)) * (p - xn);
+      }
+    }
+
+    // theta is the camber slope angle
+    // dyc_dxn is in lattice units per unit xn, so divide by chord to get per-lattice
+    const theta = Math.atan(dyc_dxn / chord);
+
+    // dy is measured from chord line — subtract camber to get distance from camber line
+    // Negate yc because screen y increases downward but lift is upward
+    const yRel  = dy - (-yc);   // ← negated yc fixes upside-down
+    const ySurf = yt * Math.cos(theta);
+
+    return Math.abs(yRel) - ySurf;
   };
 }
 
+// ---------------------------------------------------------
+// sdfNozzle(cy, diameter, length)
+// ---------------------------------------------------------
 function sdfNozzle(cy, diameter, length) {
   const halfD = diameter / 2;
   const wallThickness = 3;
@@ -64,6 +111,9 @@ function sdfNozzle(cy, diameter, length) {
   };
 }
 
+// ---------------------------------------------------------
+// sdfExplicitBlocks(blocks, blockSize)
+// ---------------------------------------------------------
 function sdfExplicitBlocks(blocks, blockSize) {
   const half = blockSize / 2;
 
@@ -76,6 +126,43 @@ function sdfExplicitBlocks(blocks, blockSize) {
       if (dist < minDist) minDist = dist;
     }
     return minDist;
+  };
+}
+
+// ---------------------------------------------------------
+// sdfRotatedBox(cx, cy, halfW, halfH, alpha)
+// ---------------------------------------------------------
+function sdfRotatedBox(cx, cy, halfW, halfH, alpha) {
+  const cos_a = Math.cos(alpha);
+  const sin_a = Math.sin(alpha);
+
+  return (x, y) => {
+    const dx =  (x - cx) * cos_a + (y - cy) * sin_a;
+    const dy = -(x - cx) * sin_a + (y - cy) * cos_a;
+
+    const qx = Math.abs(dx) - halfW;
+    const qy = Math.abs(dy) - halfH;
+
+    const ox = Math.max(qx, 0);
+    const oy = Math.max(qy, 0);
+    const outside = Math.sqrt(ox * ox + oy * oy);
+    const inside = Math.min(Math.max(qx, qy), 0);
+
+    return outside + inside;
+  };
+}
+
+// ---------------------------------------------------------
+// sdfUnion(...sdfs)
+// ---------------------------------------------------------
+function sdfUnion(...sdfs) {
+  return (x, y) => {
+    let d = Infinity;
+    for (let k = 0; k < sdfs.length; k++) {
+      const dk = sdfs[k](x, y);
+      if (dk < d) d = dk;
+    }
+    return d;
   };
 }
 
@@ -179,6 +266,50 @@ export function buildAirfoil(dims, cx, cy, chord, alpha) {
   };
 }
 
+// ---------------------------------------------------------
+// buildNACA2412(dims, cx, cy, chord, alpha)
+// ---------------------------------------------------------
+export function buildNACA2412(dims, cx, cy, chord, alpha) {
+  return {
+    geometry: buildGeometryFromSDF(dims, sdfNACA2412(cx, cy, chord, alpha)),
+    charLength: chord,
+  };
+}
+
+// ---------------------------------------------------------
+// buildSquareCylinder(dims, cx, cy, size, alpha)
+// ---------------------------------------------------------
+export function buildSquareCylinder(dims, cx, cy, size, alpha) {
+  const half = size / 2;
+  return {
+    geometry: buildGeometryFromSDF(dims, sdfRotatedBox(cx, cy, half, half, alpha)),
+    charLength: size,
+  };
+}
+
+// ---------------------------------------------------------
+// buildTandemCylinders(dims, cx, cy, radius, spacing)
+// ---------------------------------------------------------
+export function buildTandemCylinders(dims, cx, cy, radius, spacing) {
+  const cx1 = cx - spacing / 2;
+  const cx2 = cx + spacing / 2;
+
+  const sdf = sdfUnion(
+    sdfCircle(cx1, cy, radius),
+    sdfCircle(cx2, cy, radius)
+  );
+
+  return {
+    geometry: buildGeometryFromSDF(dims, sdf),
+    cx1,
+    cx2,
+    cy,
+    radius,
+    spacing,
+    charLength: 2 * radius,
+  };
+}
+
 export function buildEmpty(dims) {
   return {
     geometry: buildGeometryFromSDF(dims, sdfEmpty()),
@@ -232,6 +363,40 @@ export function defaultCylinder(dims) {
   const cy     = Math.floor(NY / 2);
   const radius = Math.max(4, Math.floor(NY / 8));
   return buildCylinder(dims, cx, cy, radius);
+}
+
+// ---------------------------------------------------------
+// defaultNACA2412(dims)
+// ---------------------------------------------------------
+export function defaultNACA2412(dims) {
+  const { NX, NY } = dims;
+  const chord = Math.floor(NX / 3);
+  const cx    = Math.floor(NX / 3);
+  const cy    = Math.floor(NY / 2);
+  return buildNACA2412(dims, cx, cy, chord, 0);
+}
+
+// ---------------------------------------------------------
+// defaultSquareCylinder(dims)
+// ---------------------------------------------------------
+export function defaultSquareCylinder(dims) {
+  const { NX, NY } = dims;
+  const cx   = Math.floor(NX / 4);
+  const cy   = Math.floor(NY / 2);
+  const size = Math.max(8, Math.floor(NY / 4));
+  return buildSquareCylinder(dims, cx, cy, size, 0);
+}
+
+// ---------------------------------------------------------
+// defaultTandemCylinders(dims)
+// ---------------------------------------------------------
+export function defaultTandemCylinders(dims) {
+  const { NX, NY } = dims;
+  const cx      = Math.floor(NX * 0.30);
+  const cy      = Math.floor(NY / 2);
+  const radius  = Math.max(4, Math.floor(NY / 10));
+  const spacing = Math.max(12, Math.floor(NX * 0.12));
+  return buildTandemCylinders(dims, cx, cy, radius, spacing);
 }
 
 export function buildNozzle(dims, cy, diameter) {

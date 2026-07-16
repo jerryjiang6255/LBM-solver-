@@ -1,4 +1,4 @@
-// src/collisionFused.js  (compare-mode ready, minimal refactor)
+// src/collisionFused.js  (compare-mode ready, V6 physics-ready)
 // ============================================================
 
 import { CX, CY, W } from "./lbm.js";
@@ -6,9 +6,12 @@ import { CX, CY, W } from "./lbm.js";
 // ---------------------------------------------------------
 // LES constants
 // ---------------------------------------------------------
-const CS          = 0.17;
+const CS          = 0.17;   // Smagorinsky constant
+const CW          = 0.325;  // WALE constant
 const DELTA       = 1.0;
 const CS_DELTA_SQ = CS * CS * DELTA * DELTA;
+const CW_DELTA_SQ = CW * CW * DELTA * DELTA;
+const WALE_EPS    = 1e-20;
 
 // ---------------------------------------------------------
 // Wall model constants
@@ -35,26 +38,27 @@ const TAU_MAX = 5.0;
 const LAMBDA = 3.0 / 16.0;
 const TRT_PAIRS = new Uint8Array([1, 3,  2, 4,  5, 7,  6, 8]);
 
-// feq scratch remains module-local since both sims run sequentially,
-// not concurrently. Q is fixed at 9 in current architecture.
 const feqScratch = new Float32Array(9);
 
 // ---------------------------------------------------------
 // collideFused(sim, u0)
 // ---------------------------------------------------------
+// u0 should be the instantaneous inlet velocity if pulsation is active.
 export function collideFused(sim, u0) {
-  const { N, Q, f, rho, ux, uy, solid, wallAdjacent, wallDist, NU0 } = sim;
+  const { N, Q, NX, NY, f, rho, ux, uy, solid, wallAdjacent, wallDist, NU0 } = sim;
+  const physics = sim.physics || {
+    collisionModel: "trt",
+    lesModel: "smagorinsky",
+    wallModel: true,
+  };
 
-  const STRAIN_PRE = -1.5; // -3/2 factor in Sij = -3/(2*rho)*sum(...)
+  const STRAIN_PRE = -1.5;
 
   for (let n = 0; n < N; n++) {
     if (solid[n]) continue;
 
     const base = n * Q;
 
-    // =====================================================
-    // Direction loop 1: macroscopic moments
-    // =====================================================
     let r = 0.0, jx = 0.0, jy = 0.0;
     for (let i = 0; i < Q; i++) {
       const fi = f[base + i];
@@ -87,11 +91,8 @@ export function collideFused(sim, u0) {
     ux[n]  = u;
     uy[n]  = v;
 
-    // =====================================================
-    // Direction loop 2: feq + non-equilibrium stress
-    // =====================================================
     const v215         = 1.5 * (u * u + v * v);
-    const strainFactor = STRAIN_PRE / r; // -3/(2*rho)
+    const strainFactor = -1.5 / r;
 
     let Pxx = 0.0, Pyy = 0.0, Pxy = 0.0;
 
@@ -108,87 +109,154 @@ export function collideFused(sim, u0) {
       Pxy += cx * cy * fneq;
     }
 
-    // =====================================================
-    // Scalar: full LES strain rate + Smagorinsky nu_t
-    // =====================================================
-    const Sxx  = strainFactor * Pxx;
-    const Syy  = strainFactor * Pyy;
-    const Sxy  = strainFactor * Pxy;
-    const Smag = Math.sqrt(2.0 * (Sxx * Sxx + Syy * Syy + 2.0 * Sxy * Sxy));
-    let nuT    = CS_DELTA_SQ * Smag;
+    let nuT = computeSubgridViscosity(sim, physics, n, u, v, strainFactor, Pxx, Pyy, Pxy, NX, NY);
+    nuT = applyWallModelIfEnabled(physics, wallAdjacent, wallDist, n, u, v, NU0, nuT);
 
-    // =====================================================
-    // Scalar: wall model (log-law + Van Driest)
-    // =====================================================
-    if (wallAdjacent[n]) {
-      const y    = Math.max(wallDist[n], Y_MIN);
-      const uMag = Math.sqrt(u * u + v * v);
-
-      let uStar = Math.max(0.1 * uMag, 1e-6);
-      for (let k = 0; k < WALL_ITERS; k++) {
-        const yuOvNu = Math.max((y * uStar) / NU0, 1e-3);
-        const lhs    = (1.0 / KAPPA) * Math.log(yuOvNu) + B_LOG;
-        const R      = uStar * lhs - uMag;
-        const Rp     = lhs + 1.0 / KAPPA;
-        if (Math.abs(Rp) < 1e-10) break;
-
-        let next = uStar - R / Rp;
-        if (!Number.isFinite(next) || next <= 0.0) next = 1e-6;
-        if (Math.abs(next - uStar) < WALL_TOL) {
-          uStar = next;
-          break;
-        }
-        uStar = next;
-      }
-
-      const yPlus = (y * uStar) / NU0;
-      const fDamp = 1.0 - Math.exp(-yPlus / A_PLUS);
-      nuT = nuT * fDamp;
-    }
-
-    // =====================================================
-    // Scalar: TRT relaxation rates
-    // =====================================================
     const nuTot = NU0 + nuT;
-    let tauPlus = 3.0 * nuTot + 0.5;
-    if (tauPlus < TAU_MIN) tauPlus = TAU_MIN;
-    if (tauPlus > TAU_MAX) tauPlus = TAU_MAX;
 
-    const omegaPlus  = 1.0 / tauPlus;
-    const tauMinus   = LAMBDA / (tauPlus - 0.5) + 0.5;
-    const omegaMinus = 1.0 / tauMinus;
-
-    // =====================================================
-    // Direction loop 3: TRT relax + recombine
-    // =====================================================
-    f[base] -= omegaPlus * (f[base] - feqScratch[0]);
-
-    for (let p = 0; p < 8; p += 2) {
-      const i  = TRT_PAIRS[p];
-      const ib = TRT_PAIRS[p + 1];
-
-      const fi   = f[base + i];
-      const fib  = f[base + ib];
-      const eqi  = feqScratch[i];
-      const eqib = feqScratch[ib];
-
-      const fPlus   = 0.5 * (fi + fib);
-      const fMinus  = 0.5 * (fi - fib);
-      const eqPlus  = 0.5 * (eqi + eqib);
-      const eqMinus = 0.5 * (eqi - eqib);
-
-      const fPlusPost  = fPlus  - omegaPlus  * (fPlus  - eqPlus);
-      const fMinusPost = fMinus - omegaMinus * (fMinus - eqMinus);
-
-      f[base + i]  = fPlusPost + fMinusPost;
-      f[base + ib] = fPlusPost - fMinusPost;
+    if (physics.collisionModel === "bgk") {
+      relaxBGK(base, Q, f, feqScratch, nuTot);
+    } else {
+      relaxTRT(base, f, feqScratch, nuTot);
     }
   }
 }
 
-// ---------------------------------------------------------
-// reequilibrate(sim, n, u, v, r)
-// ---------------------------------------------------------
+function computeSubgridViscosity(sim, physics, n, u, v, strainFactor, Pxx, Pyy, Pxy, NX, NY) {
+  if (physics.lesModel === "off") return 0.0;
+
+  if (physics.lesModel === "wale") {
+    return computeWaleNuT(sim, n, NX, NY);
+  }
+
+  const Sxx  = strainFactor * Pxx;
+  const Syy  = strainFactor * Pyy;
+  const Sxy  = strainFactor * Pxy;
+  const Smag = Math.sqrt(2.0 * (Sxx * Sxx + Syy * Syy + 2.0 * Sxy * Sxy));
+  return CS_DELTA_SQ * Smag;
+}
+
+function computeWaleNuT(sim, n, NX, NY) {
+  const { ux, uy, solid } = sim;
+
+  const x = n % NX;
+  const y = (n / NX) | 0;
+
+  if (x <= 0 || x >= NX - 1 || y <= 0 || y >= NY - 1) return 0.0;
+
+  const nL = n - 1;
+  const nR = n + 1;
+  const nD = n - NX;
+  const nU = n + NX;
+
+  if (solid[nL] || solid[nR] || solid[nD] || solid[nU]) return 0.0;
+
+  const dudx = 0.5 * (ux[nR] - ux[nL]);
+  const dudy = 0.5 * (ux[nU] - ux[nD]);
+  const dvdx = 0.5 * (uy[nR] - uy[nL]);
+  const dvdy = 0.5 * (uy[nU] - uy[nD]);
+
+  const Sxx = dudx;
+  const Syy = dvdy;
+  const Sxy = 0.5 * (dudy + dvdx);
+
+  const IS = Sxx * Sxx + Syy * Syy + 2.0 * Sxy * Sxy;
+
+  const Gxx = dudx * dudx + dudy * dvdx;
+  const Gxy = dudy * (dudx + dvdy);
+  const Gyx = dvdx * (dudx + dvdy);
+  const Gyy = dvdx * dudy + dvdy * dvdy;
+
+  const trG = Gxx + Gyy;
+  const Sd_xx = Gxx - (1.0 / 3.0) * trG;
+  const Sd_yy = Gyy - (1.0 / 3.0) * trG;
+  const Sd_xy = 0.5 * (Gxy + Gyx);
+
+  const ID = Sd_xx * Sd_xx + Sd_yy * Sd_yy + 2.0 * Sd_xy * Sd_xy;
+
+  if (ID <= WALE_EPS) return 0.0;
+
+  const num = Math.pow(ID, 1.5);
+  const den = Math.pow(IS, 2.5) + Math.pow(ID, 1.25) + WALE_EPS;
+
+  return CW_DELTA_SQ * (num / den);
+}
+
+function applyWallModelIfEnabled(physics, wallAdjacent, wallDist, n, u, v, NU0, nuT) {
+  if (!physics.wallModel) return nuT;
+  if (physics.lesModel === "off") return nuT;
+  if (!wallAdjacent[n]) return nuT;
+
+  const y    = Math.max(wallDist[n], Y_MIN);
+  const uMag = Math.sqrt(u * u + v * v);
+
+  let uStar = Math.max(0.1 * uMag, 1e-6);
+  for (let k = 0; k < WALL_ITERS; k++) {
+    const yuOvNu = Math.max((y * uStar) / NU0, 1e-3);
+    const lhs    = (1.0 / KAPPA) * Math.log(yuOvNu) + B_LOG;
+    const R      = uStar * lhs - uMag;
+    const Rp     = lhs + 1.0 / KAPPA;
+    if (Math.abs(Rp) < 1e-10) break;
+
+    let next = uStar - R / Rp;
+    if (!Number.isFinite(next) || next <= 0.0) next = 1e-6;
+    if (Math.abs(next - uStar) < WALL_TOL) {
+      uStar = next;
+      break;
+    }
+    uStar = next;
+  }
+
+  const yPlus = (y * uStar) / NU0;
+  const fDamp = 1.0 - Math.exp(-yPlus / A_PLUS);
+  return nuT * fDamp;
+}
+
+function relaxTRT(base, f, feqScratch, nuTot) {
+  let tauPlus = 3.0 * nuTot + 0.5;
+  if (tauPlus < TAU_MIN) tauPlus = TAU_MIN;
+  if (tauPlus > TAU_MAX) tauPlus = TAU_MAX;
+
+  const omegaPlus  = 1.0 / tauPlus;
+  const tauMinus   = LAMBDA / (tauPlus - 0.5) + 0.5;
+  const omegaMinus = 1.0 / tauMinus;
+
+  f[base] -= omegaPlus * (f[base] - feqScratch[0]);
+
+  for (let p = 0; p < 8; p += 2) {
+    const i  = TRT_PAIRS[p];
+    const ib = TRT_PAIRS[p + 1];
+
+    const fi   = f[base + i];
+    const fib  = f[base + ib];
+    const eqi  = feqScratch[i];
+    const eqib = feqScratch[ib];
+
+    const fPlus   = 0.5 * (fi + fib);
+    const fMinus  = 0.5 * (fi - fib);
+    const eqPlus  = 0.5 * (eqi + eqib);
+    const eqMinus = 0.5 * (eqi - eqib);
+
+    const fPlusPost  = fPlus  - omegaPlus  * (fPlus  - eqPlus);
+    const fMinusPost = fMinus - omegaMinus * (fMinus - eqMinus);
+
+    f[base + i]  = fPlusPost + fMinusPost;
+    f[base + ib] = fPlusPost - fMinusPost;
+  }
+}
+
+function relaxBGK(base, Q, f, feqScratch, nuTot) {
+  let tau = 3.0 * nuTot + 0.5;
+  if (tau < TAU_MIN) tau = TAU_MIN;
+  if (tau > TAU_MAX) tau = TAU_MAX;
+
+  const omega = 1.0 / tau;
+
+  for (let i = 0; i < Q; i++) {
+    f[base + i] -= omega * (f[base + i] - feqScratch[i]);
+  }
+}
+
 function reequilibrate(sim, n, u, v, r) {
   const { Q, f, rho, ux, uy } = sim;
 

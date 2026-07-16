@@ -1,94 +1,168 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <!-- ===================================================== -->
+  <!-- Document metadata / social preview                    -->
+  <!-- ===================================================== -->
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LBM Flow Visualizer</title>
   <link rel="stylesheet" href="style.css" />
 
   <meta property="og:title"       content="Lattice Boltzmann Flow Visualizer" />
-  <meta property="og:description" content="Real-time D2Q9 LBM fluid simulation with TRT collision, Smagorinsky LES, BFL boundaries, and live sandbox drawing." />
+  <meta property="og:description" content="Real-time D2Q9 LBM fluid simulation with selectable physics, pulsing inlet, BFL boundaries, and live sandbox drawing." />
   <meta property="og:image"       content="https://jerryjiang6255.github.io/LBM-solver-/preview.png" />
   <meta property="og:url"         content="https://jerryjiang6255.github.io/LBM-solver-/" />
   <meta property="og:type"        content="website" />
 
   <meta name="twitter:card"        content="summary_large_image" />
   <meta name="twitter:title"       content="Lattice Boltzmann Flow Visualizer" />
-  <meta name="twitter:description" content="Real-time D2Q9 LBM fluid simulation with TRT collision, Smagorinsky LES, BFL boundaries, and live sandbox drawing." />
+  <meta name="twitter:description" content="Real-time D2Q9 LBM fluid simulation with selectable physics, pulsing inlet, BFL boundaries, and live sandbox drawing." />
   <meta name="twitter:image"       content="https://jerryjiang6255.github.io/LBM-solver-/preview.png" />
 </head>
 <body>
   <div class="app">
 
+    <!-- =================================================== -->
+    <!-- Header                                              -->
+    <!-- =================================================== -->
     <header class="app-header">
       <h1>Lattice Boltzmann Sandbox
-        <span class="tag tooltip-trigger" data-tip="V5 features: TRT two-relaxation-time collision, Smagorinsky LES eddy viscosity, BFL interpolated boundary with SDF q values, hard Dirichlet inlet reset, zero-gradient outlet copy, far-field Dirichlet top/bottom walls, user-drawn sandbox walls with real-time flow interaction.">V5</span>
+        <span class="tag tooltip-trigger" data-tip="V7 features: TRT/BGK collision selection, Smagorinsky/WALE/Off LES selection, wall-model toggle, pulsing inlet forcing, extra geometry presets, BFL interpolated boundary, global fidelity presets, and live sandbox drawing.">V7</span>
       </h1>
+
       <span class="subtitle">
         <span class="tooltip-trigger" data-tip="D2Q9: 2-dimensional, 9-velocity lattice. Each node stores 9 distribution functions representing particle populations moving in 8 directions plus rest.">D2Q9</span>
         <span class="subtitle-sep"> · </span>
         <span class="tooltip-trigger" data-tip="TRT (Two-Relaxation-Time): collision operator with two rates — omega+ controls physical viscosity, omega- controls numerical stability via the Magic Parameter Λ=3/16. More accurate than BGK near boundaries.">TRT</span>
         <span class="subtitle-sep"> · </span>
-        <span class="tooltip-trigger" data-tip="Smagorinsky LES: Large Eddy Simulation turbulence model. Adds eddy viscosity νt = (Cs·Δ)²·|S| to the base viscosity, damping sub-grid turbulent fluctuations without resolving them explicitly.">Smagorinsky LES</span>
+        <span class="tooltip-trigger" data-tip="BGK (Bhatnagar-Gross-Krook): single-relaxation-time collision model. Simpler and slightly cheaper than TRT, but generally less accurate and less robust near boundaries.">BGK</span>
         <span class="subtitle-sep"> · </span>
-        <span class="tooltip-trigger" data-tip="BFL (Bouzidi-Firdaouss-Lallemand): interpolated bounce-back boundary condition. Uses the fractional wall distance q from the SDF to reconstruct distributions with sub-lattice accuracy, eliminating the half-node position error of plain bounce-back.">BFL boundary</span>
+        <span class="tooltip-trigger" data-tip="Smagorinsky LES: Large Eddy Simulation turbulence model. Adds eddy viscosity νt = (Cs·Δ)²·|S| to the base viscosity.">Smagorinsky LES</span>
         <span class="subtitle-sep"> · </span>
-        <span class="tooltip-trigger" data-tip="Log-law wall model: near-wall turbulence closure using the law of the wall u+ = (1/κ)ln(y+) + B, where κ=0.41 (von Kármán constant) and B=5.2. Solved iteratively via Newton-Raphson to find the friction velocity u* from the local wall distance and velocity magnitude. Van Driest damping f = 1 - exp(-y+/A+) blends the eddy viscosity to zero at the wall, recovering the viscous sublayer without requiring wall-resolved grid spacing.">Wall model</span>
+        <span class="tooltip-trigger" data-tip="WALE LES: Wall-Adapting Local Eddy-viscosity model. Better near-wall LES behaviour than plain Smagorinsky, at higher computational cost.">WALE LES</span>
+        <span class="subtitle-sep"> · </span>
+        <span class="tooltip-trigger" data-tip="BFL (Bouzidi-Firdaouss-Lallemand): interpolated bounce-back boundary condition using fractional wall distance q from the SDF.">BFL boundary</span>
+        <span class="subtitle-sep"> · </span>
+        <span class="tooltip-trigger" data-tip="Wall model: near-wall turbulence closure using the law of the wall and Van Driest damping.">Wall model</span>
       </span>
+
       <a class="credit" href="https://www.linkedin.com/in/jerry-jiang-a38127285/" target="_blank" rel="noopener noreferrer">
         Built by <span class="credit-name">Jerry Jiang</span>
       </a>
-    </header> 
-   <div class="tooltip" id="tooltip" role="tooltip"></div>
+    </header>
+
+    <div class="tooltip" id="tooltip" role="tooltip"></div> 
+
 
     <main class="app-main">
+      <!-- ================================================= -->
+      <!-- Top control panel                                 -->
+      <!-- ================================================= -->
       <div class="hud">
 
-      <div class="ctrl-group">
-        <div class="group-label">Session</div>
-        <div class="btn-stack">
-          <button class="btn" id="sandbox-btn">Sandbox</button>
-          <button class="btn" id="compare-btn">Compare</button>
+        <!-- Session -->
+        <div class="ctrl-group">
+          <div class="group-label">Session</div>
+          <div class="btn-stack">
+            <button class="btn" id="sandbox-btn">Sandbox</button>
+            <button class="btn" id="compare-btn">Compare</button>
+          </div>
         </div>
-        <div id="compare-targets" style="display:none">
-          <!-- moved to flow-target-bar, keep empty or remove -->
-        </div>
-      </div>
 
+        <!-- Body -->
         <div class="ctrl-group">
           <div class="group-label">Body</div>
           <div class="btn-grid">
             <button class="btn active" id="body-airfoil">NACA 0012</button>
-            <button class="btn"        id="body-nozzle">Nozzle</button>
-            <button class="btn"        id="body-blocks">Blocks</button>
-            <button class="btn"        id="body-cylinder">Cylinder</button>
-            <button class="btn"        id="body-empty">Empty</button>
+            <button class="btn" id="body-naca2412">NACA 2412</button>
+            <button class="btn" id="body-nozzle">Nozzle</button>
+            <button class="btn" id="body-blocks">Blocks</button>
+
+          </div>
+          <div class="btn-grid">
+            <button class="btn" id="body-cylinder">Cylinder</button>
+            <button class="btn" id="body-tandem-cylinders">Tandem Cyl</button>
+            <button class="btn" id="body-square-cylinder">Square</button>
+            <button class="btn" id="body-empty">Empty</button>
           </div>
           <div class="slider-row" id="aoa-row" style="display:none">
             <label>
               <span>Angle of attack</span>
               <output id="aoa-value">10.0°</output>
             </label>
-            <input type="range" id="aoa-slider" min="-20" max="20" step="0.5" value="10" />
+            <input type="range" id="aoa-slider"
+                  min="-45" max="45" step="0.5" value="10">
           </div>
+
           <div class="slider-row" id="nozzle-row" style="display:none">
             <label>
               <span>Nozzle diameter</span>
               <output id="nozzle-value">16</output>
             </label>
-            <input type="range" id="nozzle-slider" min="8" max="80" step="2" value="16" />
+            <input type="range" id="nozzle-slider"
+                  min="8" max="80" step="2" value="16">
+          </div>
+          <div class="slider-row" id="tandem-row" style="display:none">
+            <label>
+              <span>Tandem spacing</span>
+              <output id="tandem-value">30</output>
+            </label>
+            <input type="range" id="tandem-slider"
+                  min="8" max="120" step="2" value="30">
           </div>
         </div>
 
+        <!-- Flow -->
         <div class="ctrl-group">
           <div class="group-label">Flow</div>
+          <div class="btn-grid">
+            <button class="btn active" id="pulse-off">Pulse Off</button>
+            <button class="btn" id="pulse-on">Pulse On</button>
+          </div>
           <div class="slider-row">
             <label>
               <span>Inlet velocity</span>
-              <output id="u0-value">Ma = 0.30</output>
+              <output id="u0-value">Ma=0.30</output>
             </label>
             <input type="range" id="u0-slider" min="0.01" max="0.23" step="0.005" value="0.1732" />
           </div>
+          <div class="slider-row" id="pulse-amp-row" style="display:none">
+            <label>
+              <span>Pulse amplitude</span>
+              <output id="pulse-amp-value">0.10</output>
+            </label>
+            <input type="range" id="pulse-amp-slider" min="0.00" max="0.50" step="0.01" value="0.10" />
+          </div>
+          <div class="slider-row" id="pulse-freq-row" style="display:none">
+            <label>
+              <span>Pulse frequency</span>
+              <output id="pulse-freq-value">0.010</output>
+            </label>
+            <input type="range" id="pulse-freq-slider" min="0.001" max="0.050" step="0.001" value="0.010" />
+          </div>
+        </div>
+
+        <!-- Physics -->
+        <div class="ctrl-group">
+          <div class="group-label">Physics</div>
+
+          <!-- Primary models -->
+          <div class="btn-grid">
+            <button class="btn active" id="collision-trt">TRT</button>
+            <button class="btn" id="les-wale">WALE</button>
+            <button class="btn active" id="wall-on">Wall On</button>
+          </div>
+
+          <!-- Alternatives -->
+          <div class="btn-grid">
+            <button class="btn" id="collision-bgk">BGK</button>
+            <button class="btn active" id="les-smag">Smag</button>
+            <button class="btn" id="wall-off">Wall Off</button>
+          </div>
+
+          
+          <!-- Reynolds -->
           <div class="slider-row">
             <label>
               <span>Reynolds number</span>
@@ -96,21 +170,25 @@
             </label>
             <input type="range" id="re-slider" min="20" max="10000" step="10" value="5000" />
           </div>
+
+
         </div>
 
+        <!-- Display -->
         <div class="ctrl-group">
           <div class="group-label">Display</div>
-          <div class="btn-grid">
-            <button class="btn active" id="mode-speed">Speed</button>
-            <button class="btn" id="mode-qcrit">Q-Criterion</button>
-          </div>
+
+          
           <div class="btn-grid">
             <button class="btn" id="vector-btn">Vectors</button>
             <button class="btn" id="dist-btn">Distribution</button>
           </div>
-        </div> 
-        <div class="ctrl-group">
-          <div class="group-label">Controls</div>
+
+            <div class="btn-grid">
+              <button class="btn active" id="mode-speed">Speed</button>
+              <button class="btn"        id="mode-qcrit">Q-Criterion</button>
+            </div>
+
           <div class="slider-row">
             <label>
               <span>Color scale</span>
@@ -118,85 +196,95 @@
             </label>
             <input type="range" id="scale-slider" min="0.02" max="1.0" step="0.005" value="0.5" />
           </div>
-          <div class="btn-grid">
-            <!-- <button class="btn"        id="compare-btn">Compare</button> -->
-            <button class="btn"        id="pause-btn">Pause</button>
-            <button class="btn danger" id="clear-btn">Clear</button>
-            <button class="btn danger" id="reset-btn">Reset</button>
-          </div>
-          <!-- <div class="btn-grid" id="compare-targets" style="display:none">
-            <button class="btn active" id="target-1">Flow 1</button>
-            <button class="btn active" id="target-2">Flow 2</button>
-          </div> -->
+
+
         </div>
 
+       <!-- Stats -->
+      <div class="ctrl-group">
+        <div class="group-label">Stats</div>
 
-
-        <div class="ctrl-group">
-          <div class="group-label">Stats</div>
-          <div class="slider-row">
-            <label>
-              <span>Sim speed</span>
-              <output id="steps-value">10</output>
-            </label>
-            <input type="range" id="steps-slider" min="1" max="20" step="1" value="10" />
-          </div>
-          <div class="stats">
-            <div class="stat">
-              <span class="stat-label">FPS</span>
-              <output class="stat-value" id="fps-value">--</output>
-            </div>
-            <div class="stat">
-              <span class="stat-label">Frame</span>
-              <output class="stat-value" id="frame-value">0 / 0</output>
-            </div>
-          </div>
+        <div class="btn-grid">
+          <button class="btn"        id="pause-btn">Pause</button>
+          <button class="btn danger" id="clear-btn">Clear</button>
+          <button class="btn danger" id="reset-btn">Reset</button>
         </div>
 
-        <div class="ctrl-group">
-          <div class="group-label">Sim Info</div>
-          <div class="sim-info-row">
-            <div class="btn-stack">
-              <button class="btn" id="grid-high">High</button>
-              <button class="btn active" id="grid-mid">Mid</button>
-              <button class="btn" id="grid-low">Low</button>
-            </div>
-            <div class="sim-stats">
-              <div class="stat">
-                <span class="stat-label">Grid</span>
-                <output class="stat-value" id="grid-value" style="font-size:0.75rem">256×128</output>
-              </div>
-              <div class="stat">
-                <span class="stat-label">Nodes</span>
-                <output class="stat-value" id="nodes-value" style="font-size:0.75rem">32,768</output>
-              </div>
-            </div>
-          </div>
+        <div class="slider-row">
+          <label>
+            <span>Sim speed</span>
+            <output id="steps-value">10</output>
+          </label>
+          <input type="range" id="steps-slider" min="1" max="20" step="1" value="10" />
         </div>
 
-       <p class="error" id="app-error" role="alert"></p>
+        <div class="stats">
+          <div class="stat">
+            <span class="stat-label">Fps</span>
+            <output class="stat-value" id="fps-value">--</output>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Frame</span>
+            <output class="stat-value" id="frame-value">0 / 0</output>
+          </div>
+        </div>
       </div>
 
-      <div class="flow-target-bar" id="flow-target-bar" style="display:none">
-  <button class="btn active" id="flow-label-1">Flow 1</button>
-  <button class="btn active" id="flow-label-2">Flow 2</button>
-</div>
+      <!-- Fidelity -->
+      <div class="ctrl-group">
+        <div class="group-label">Fidelity</div>
 
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div class="btn-stack">
+            <button class="btn"        id="grid-high">High</button>
+            <button class="btn active" id="grid-mid">Mid</button>
+            <button class="btn"        id="grid-low">Low</button>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:3px;">
+            <div class="stat">
+              <span class="stat-label">Grid</span>
+              <output class="stat-value" id="grid-value" style="font-size:0.75rem">256×128</output>
+            </div>
+            <div class="stat">
+              <span class="stat-label">Nodes</span>
+              <output class="stat-value" id="nodes-value" style="font-size:0.75rem">32,768</output>
+            </div>
+          </div>
+        </div>
+      </div>
+
+        <p class="error" id="app-error" role="alert"></p>
+      </div>
+
+      <!-- ================================================= -->
+      <!-- Compare target bar                                -->
+      <!-- ================================================= -->
+      <div class="flow-target-bar" id="flow-target-bar" style="display:none">
+        <button class="btn active" id="flow-label-1">Flow 1</button>
+        <button class="btn active" id="flow-label-2">Flow 2</button>
+      </div>
+
+      <!-- ================================================= -->
+      <!-- Canvas area                                       -->
+      <!-- ================================================= -->
       <div class="compare-wrap">
         <div class="canvas-wrap" id="canvas-wrap-1" data-label="Flow 1">
           <canvas id="flow-canvas-1"></canvas>
           <canvas id="body-canvas-1"></canvas>
           <canvas id="wall-canvas-1"></canvas>
-          <!-- Flow target button overlay -->
         </div>
+
         <div class="canvas-wrap" id="canvas-wrap-2" data-label="Flow 2" style="display:none">
           <canvas id="flow-canvas-2"></canvas>
           <canvas id="body-canvas-2"></canvas>
           <canvas id="wall-canvas-2"></canvas>
         </div>
       </div>
-    </main>
-
+    </main> 
+   <!-- =================================================== -->
+    <!-- Footer                                              -->
+    <!-- =================================================== -->
     <footer class="footer">
       <p>
         Educational use only. This simulator demonstrates the power of the
@@ -207,40 +295,71 @@
         remarkably capable of handling complex geometries without the need for mesh generation or
         remeshing — as demonstrated by the sandbox drawing feature, where arbitrary walls can be
         placed in real time and the flow adapts instantly without any restart or remesh. The solver
-        here uses a D2Q9 lattice with TRT collision, Smagorinsky LES turbulence modelling, BFL
-        interpolated boundary conditions, and SDF-based geometry. Any feedback or advice is greatly
-        appreciated.
+        here uses a D2Q9 lattice with selectable collision / LES physics, pulsing inlet forcing,
+        BFL interpolated boundary conditions, and SDF-based geometry. Any feedback or advice is
+        greatly appreciated.
       </p>
     </footer>
-  </div> 
- <script>
-    const errEl = () => document.getElementById('app-error');
-    window.addEventListener('error', e => {
-      errEl().textContent = 'Error: ' + (e.message || e.error) +
-        (e.filename ? ` (${e.filename}:${e.lineno})` : '');
-    });
-    window.addEventListener('unhandledrejection', e => {
-      errEl().textContent = 'Unhandled rejection: ' + (e.reason?.message || e.reason);
-    });
-  </script>
+  </div>
 
+  <!-- ===================================================== -->
+  <!-- Error capture                                         -->
+  <!-- ===================================================== -->
+  <script>
+    const errEl = () => document.getElementById("app-error");
+
+    window.addEventListener("error", e => {
+      errEl().textContent =
+        "Error: " + (e.message || e.error) +
+        (e.filename ? ` (${e.filename}:${e.lineno})` : "");
+    });
+
+    window.addEventListener("unhandledrejection", e => {
+      errEl().textContent =
+        "Unhandled rejection: " + (e.reason?.message || e.reason);
+    });
+  </script> 
+ <!-- ===================================================== -->
+  <!-- Main application module                               -->
+  <!-- ===================================================== -->
   <script type="module">
+    // =====================================================
+    // Imports
+    // =====================================================
     import { Q, W } from "./src/lbm.js";
     import {
-      createSimInstance, initField, setReynolds, setCharacteristicLength
+      createSimInstance,
+      initField,
+      setReynolds,
+      setCharacteristicLength,
+      getInletVelocity
     } from "./src/simInstance.js";
     import { collideFused } from "./src/collisionFused.js";
     import { stream } from "./src/streaming.js";
     import {
-      applyBoundaryConditions, setNozzleInlet, clearNozzleInlet
+      applyBoundaryConditions,
+      setNozzleInlet,
+      clearNozzleInlet
     } from "./src/boundary.js";
     import { Renderer } from "./src/render.js";
     import { BodyRenderer } from "./src/renderBody.js";
     import { createUserDraw } from "./src/userDraw.js";
     import {
-      buildAirfoil, buildEmpty, defaultBlockMatrix, buildNozzle, defaultCylinder
+      buildAirfoil,
+      buildNACA2412,
+      buildEmpty,
+      defaultBlockMatrix,
+      buildNozzle,
+      defaultCylinder,
+      defaultSquareCylinder,
+      buildSquareCylinder,
+      defaultTandemCylinders,
+      buildTandemCylinders
     } from "./src/geometry.js";
 
+    // =====================================================
+    // Constants / presets
+    // =====================================================
     const GRID_PRESETS = {
       low:  { NX: 160, NY: 80 },
       mid:  { NX: 256, NY: 128 },
@@ -250,6 +369,9 @@
     const U_COFLOW = 0.005;
     const CS_LATTICE = 1 / Math.sqrt(3);
 
+    // =====================================================
+    // Global app state
+    // =====================================================
     let currentGridKey = "mid";
     let sandboxActive = false;
     let sandboxMode = "draw";
@@ -257,12 +379,89 @@
     let sim1 = null;
     let sim2 = null;
 
-    function currentDims() {
-      return GRID_PRESETS[currentGridKey];
+    let compareMode = false;
+    let target1Active = true;
+    let target2Active = true;
+
+    // =====================================================
+    // Cached DOM references
+    // =====================================================
+    const compareBtn    = document.getElementById("compare-btn");
+    const canvasWrap2   = document.getElementById("canvas-wrap-2");
+    const flowTargetBar = document.getElementById("flow-target-bar");
+    const target1Btn    = document.getElementById("flow-label-1");
+    const target2Btn    = document.getElementById("flow-label-2");
+
+    const aoaRow        = document.getElementById("aoa-row");
+    const nozzleRow     = document.getElementById("nozzle-row");
+    const tandemRow     = document.getElementById("tandem-row");
+
+    const nozzleSlider  = document.getElementById("nozzle-slider");
+    const nozzleOutput  = document.getElementById("nozzle-value");
+    const tandemSlider  = document.getElementById("tandem-slider");
+    const tandemOutput  = document.getElementById("tandem-value");
+
+    const pulseAmpRow   = document.getElementById("pulse-amp-row");
+    const pulseFreqRow  = document.getElementById("pulse-freq-row");
+    const pulseAmpSlider = document.getElementById("pulse-amp-slider");
+    const pulseFreqSlider = document.getElementById("pulse-freq-slider");
+    const pulseAmpValue = document.getElementById("pulse-amp-value");
+    const pulseFreqValue = document.getElementById("pulse-freq-value");
+
+    const sandboxBtn    = document.getElementById("sandbox-btn");
+    const clearBtn      = document.getElementById("clear-btn");
+    const pauseBtn      = document.getElementById("pause-btn");
+
+    const tooltip       = document.getElementById("tooltip");
+
+   // =====================================================
+    // UI groups
+    // =====================================================
+    const gridGroup      = ["grid-low", "grid-mid", "grid-high"];
+    const modeGroup      = ["mode-speed", "mode-qcrit"];
+    const bodyGroup      = [
+      "body-airfoil",
+      "body-naca2412",
+      "body-cylinder",
+      "body-square-cylinder",
+      "body-tandem-cylinders",
+      "body-nozzle",
+      "body-blocks",
+      "body-empty"
+    ];
+
+    const collisionGroup = ["collision-trt", "collision-bgk"];
+    const lesGroup       = ["les-smag", "les-wale"]; //, "les-off"
+    const wallGroup      = ["wall-on", "wall-off"];
+    const pulseGroup     = ["pulse-on", "pulse-off"];
+
+    // =====================================================
+    // Helpers: physics / flow state from UI
+    // =====================================================
+    function getPhysicsFromUI() {
+      return {
+        collisionModel: document.getElementById("collision-bgk").classList.contains("active")
+          ? "bgk"
+          : "trt",
+
+        lesModel: document.getElementById("les-wale").classList.contains("active")
+          ? "wale"
+          : "smagorinsky",
+
+        wallModel: !document.getElementById("wall-off").classList.contains("active"),
+      };
     }
 
-    function currentNozzleCy() {
-      return Math.floor(currentDims().NY / 2);
+    function getFlowFromUI() {
+      return {
+        pulsationOn: document.getElementById("pulse-on").classList.contains("active"),
+        pulsationAmp: parseFloat(pulseAmpSlider.value),
+        pulsationFreq: parseFloat(pulseFreqSlider.value),
+      };
+    }
+
+    function currentDims() {
+      return GRID_PRESETS[currentGridKey];
     }
 
     function updateGridStats() {
@@ -271,6 +470,58 @@
       document.getElementById("nodes-value").textContent = (NX * NY).toLocaleString();
     }
 
+    function dropFidelity(currentKey) {
+      if (currentKey === "high") return "mid";
+      return "low";
+    }
+
+    function raiseFidelity(currentKey) {
+      if (currentKey === "low") return "mid";
+      return "high";
+    }
+
+    function setActiveBtn(ids, activeId) {
+      ids.forEach(id => document.getElementById(id).classList.remove("active"));
+      document.getElementById(activeId).classList.add("active");
+    }
+
+    function updatePulseRows() {
+      const on = document.getElementById("pulse-on").classList.contains("active");
+      pulseAmpRow.style.display = on ? "" : "none";
+      pulseFreqRow.style.display = on ? "" : "none";
+    }
+
+    function updateBodyRows(type) {
+      const aoaBodies = new Set(["airfoil", "naca2412", "square-cylinder"]);
+      aoaRow.style.display = aoaBodies.has(type) ? "" : "none";
+      nozzleRow.style.display = type === "nozzle" ? "" : "none";
+      tandemRow.style.display = type === "tandem-cylinders" ? "" : "none";
+    } 
+   // =====================================================
+    // Compare-mode target helpers
+    // =====================================================
+    function targetedSims() {
+      if (!compareMode) return sim1 ? [sim1] : [];
+      const out = [];
+      if (target1Active && sim1) out.push(sim1);
+      if (target2Active && sim2) out.push(sim2);
+      return out;
+    }
+
+    function forAllSims(fn) {
+      if (sim1 && sim1.solid) fn(sim1);
+      if (compareMode && sim2 && sim2.solid) fn(sim2);
+    }
+
+    function updateFlowLabels() {
+      flowTargetBar.style.display = compareMode ? "" : "none";
+      target1Btn.classList.toggle("active", target1Active);
+      target2Btn.classList.toggle("active", target2Active);
+    }
+
+    // =====================================================
+    // Canvas / renderer setup
+    // =====================================================
     function cloneCanvasById(id) {
       const oldCanvas = document.getElementById(id);
       const newCanvas = oldCanvas.cloneNode(false);
@@ -278,43 +529,46 @@
       return newCanvas;
     }
 
-   function setupSim(sim, flowId, bodyId, wallId) {
-    sim.flowCanvas = cloneCanvasById(flowId);
-    sim.renderer   = new Renderer(sim.flowCanvas, sim.NX, sim.NY);
+    function setupSim(sim, flowId, bodyId, wallId) {
+      sim.flowCanvas = cloneCanvasById(flowId);
+      sim.renderer   = new Renderer(sim.flowCanvas, sim.NX, sim.NY);
 
-    sim.bodyCanvas = cloneCanvasById(bodyId);
-    sim.wallCanvas = cloneCanvasById(wallId);
+      sim.bodyCanvas = cloneCanvasById(bodyId);
+      sim.wallCanvas = cloneCanvasById(wallId);
 
-    sim.flowCanvas.style.cursor = sandboxActive ? 'crosshair' : 'default';
+      sim.flowCanvas.style.cursor = sandboxActive ? "crosshair" : "default";
 
-requestAnimationFrame(() => {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const W   = (sim.flowCanvas.clientWidth || sim.NX * 4) * dpr;
-  const H   = Math.round(W * sim.NY / sim.NX);  // exact aspect ratio
+      requestAnimationFrame(() => {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const W   = (sim.flowCanvas.clientWidth || sim.NX * 4) * dpr;
+        const H   = Math.round(W * sim.NY / sim.NX);
 
-  // All three canvases get identical pixel dimensions
-  sim.flowCanvas.width  = W;
-  sim.flowCanvas.height = H;
-  sim.renderer.W = W;
-  sim.renderer.H = H;
-  sim.renderer.ctx = sim.flowCanvas.getContext('2d');
+        sim.flowCanvas.width  = W;
+        sim.flowCanvas.height = H;
+        sim.renderer.W = W;
+        sim.renderer.H = H;
+        sim.renderer.ctx = sim.flowCanvas.getContext("2d");
 
-  sim.bodyCanvas.width  = W;  // ← must match flow canvas exactly
-  sim.bodyCanvas.height = H;  // ← must match flow canvas exactly
-  sim.wallCanvas.width  = W;
-  sim.wallCanvas.height = H;
+        sim.bodyCanvas.width  = W;
+        sim.bodyCanvas.height = H;
+        sim.wallCanvas.width  = W;
+        sim.wallCanvas.height = H;
 
-  sim.bodyRenderer = new BodyRenderer(sim.bodyCanvas, sim.NX, sim.NY);
-  sim.userDraw     = createUserDraw(sim, sim.wallCanvas);
+        sim.bodyRenderer = new BodyRenderer(sim.bodyCanvas, sim.NX, sim.NY);
+        sim.userDraw     = createUserDraw(sim, sim.wallCanvas);
 
-  bindCanvasInput(sim);
-  resetSim(sim);
+        bindCanvasInput(sim);
+        resetSim(sim);
+      });
+    }
 
-    });
-  }
-
-   function createSim(id, bodyType, aoaDeg) {
+    // =====================================================
+    // Sim creation / recreation
+    // =====================================================
+    function createSim(id, bodyType, aoaDeg) {
       const { NX, NY } = currentDims();
+      const physics = getPhysicsFromUI();
+      const flow = getFlowFromUI();
 
       return createSimInstance({
         id,
@@ -322,7 +576,7 @@ requestAnimationFrame(() => {
         NY,
         bodyType,
         aoaDeg,
-        nozzleDiameter: parseInt(document.getElementById("nozzle-slider").value, 10),
+        nozzleDiameter: parseInt(nozzleSlider.value, 10),
         u0: parseFloat(document.getElementById("u0-slider").value),
         reynolds: parseFloat(document.getElementById("re-slider").value),
         displayMode: document.getElementById("mode-qcrit").classList.contains("active") ? "qcrit" : "speed",
@@ -334,45 +588,147 @@ requestAnimationFrame(() => {
         stepsPerFrame: parseInt(document.getElementById("steps-slider").value, 10),
         running: document.getElementById("pause-btn").textContent !== "Resume",
         nozzleCy: Math.floor(NY / 2),
-        uCoflow: U_COFLOW
-      });
-    }
+        uCoflow: U_COFLOW,
 
+        // Physics
+        collisionModel: physics.collisionModel,
+        lesModel: physics.lesModel,
+        wallModel: physics.wallModel,
+
+        // Pulsation
+        pulsationOn: flow.pulsationOn,
+        pulsationAmp: flow.pulsationAmp,
+        pulsationFreq: flow.pulsationFreq,
+      });
+    } 
+
+  function recreateSims() {
+  const prevSim1 = sim1;
+  const prevSim2 = sim2;
+
+  sim1 = createSim(
+    "sim1",
+    prevSim1 ? prevSim1.params.bodyType : "airfoil",
+    prevSim1 ? prevSim1.params.aoaDeg : 10
+  );
+
+  sim1.params.tandemSpacing =
+    typeof prevSim1?.params?.tandemSpacing === "number"
+      ? prevSim1.params.tandemSpacing
+      : parseInt(tandemSlider.value, 10);
+
+  setupSim(sim1, "flow-canvas-1", "body-canvas-1", "wall-canvas-1");
+
+  if (compareMode) {
+    sim2 = createSim(
+      "sim2",
+      prevSim2 ? prevSim2.params.bodyType : "cylinder",
+      prevSim2 ? prevSim2.params.aoaDeg : 0
+    );
+
+    sim2.params.tandemSpacing =
+      typeof prevSim2?.params?.tandemSpacing === "number"
+        ? prevSim2.params.tandemSpacing
+        : parseInt(tandemSlider.value, 10);
+
+    setupSim(sim2, "flow-canvas-2", "body-canvas-2", "wall-canvas-2");
+  } else {
+    sim2 = null;
+  }
+
+  updateGridStats();
+}
+
+
+    // =====================================================
+    // Geometry resolution / application
+    // =====================================================
     function resolveGeometry(sim) {
       const dims = { NX: sim.NX, NY: sim.NY };
       const bodyType = sim.params.bodyType;
       const aoaDeg = sim.params.aoaDeg;
       const nozzleDiameter = sim.params.nozzleDiameter;
+      const alpha = aoaDeg * Math.PI / 180;
 
       if (bodyType === "airfoil") {
         const chord = Math.floor(sim.NX / 3);
         const acx   = Math.floor(sim.NX / 3);
         const acy   = Math.floor(sim.NY / 2);
-        const alpha = aoaDeg * Math.PI / 180;
         const result = buildAirfoil(dims, acx, acy, chord, alpha);
+
         return {
           g: result.geometry,
-          p: { type: "airfoil", cx: acx, cy: acy, chord, alpha },
+          p: { type: "airfoil", cx: acx, cy: acy, chord, alpha, profile: "0012" },
           charLength: result.charLength
         };
+      }
 
-      } else if (bodyType === "empty") {
+      if (bodyType === "naca2412") {
+        const chord = Math.floor(sim.NX / 3);
+        const acx   = Math.floor(sim.NX / 3);
+        const acy   = Math.floor(sim.NY / 2);
+        const result = buildNACA2412(dims, acx, acy, chord, alpha);
+
+        return {
+          g: result.geometry,
+          p: { type: "naca2412", cx: acx, cy: acy, chord, alpha, profile: "2412" },
+          charLength: result.charLength
+        };
+      }
+
+      if (bodyType === "square-cylinder") {
+        const cx = Math.floor(sim.NX / 4);
+        const cy = Math.floor(sim.NY / 2);
+        const size = Math.max(8, Math.floor(sim.NY / 4));
+        const result = buildSquareCylinder(dims, cx, cy, size, alpha);
+
+        return {
+          g: result.geometry,
+          p: { type: "square-cylinder", cx, cy, size, alpha },
+          charLength: result.charLength
+        };
+      }
+
+      if (bodyType === "tandem-cylinders") {
+        const cx = Math.floor(sim.NX * 0.30);
+        const cy = Math.floor(sim.NY / 2);
+        const radius = Math.max(4, Math.floor(sim.NY / 10));
+        const spacing = sim.params.tandemSpacing ?? parseInt(tandemSlider.value, 10);
+        const result = buildTandemCylinders(dims, cx, cy, radius, spacing);
+
+        return {
+          g: result.geometry,
+          p: {
+            type: "tandem-cylinders",
+            cx1: result.cx1,
+            cx2: result.cx2,
+            cy: result.cy,
+            radius: result.radius,
+            spacing: result.spacing
+          },
+          charLength: result.charLength
+        };
+      }
+
+      if (bodyType === "empty") {
         const result = buildEmpty(dims);
         return {
           g: result.geometry,
           p: { type: "empty" },
           charLength: result.charLength
         };
+      }
 
-      } else if (bodyType === "blocks") {
+      if (bodyType === "blocks") {
         const r = defaultBlockMatrix(dims);
         return {
           g: r.geometry,
           p: { type: "blocks", blocks: r.blocks, blockSize: r.blockSize },
           charLength: r.charLength
         };
+      }
 
-      } else if (bodyType === "nozzle") {
+      if (bodyType === "nozzle") {
         const result = buildNozzle(dims, Math.floor(sim.NY / 2), nozzleDiameter);
         return {
           g: result.geometry,
@@ -384,50 +740,47 @@ requestAnimationFrame(() => {
           },
           charLength: result.charLength
         };
-
-      } else {
-        const result = defaultCylinder(dims);
-        return {
-          g: result.geometry,
-          p: {
-            type: "cylinder",
-            cx: Math.floor(sim.NX / 4),
-            cy: Math.floor(sim.NY / 2),
-            radius: Math.max(4, Math.floor(sim.NY / 8))
-          },
-          charLength: result.charLength
-        };
       }
+
+      const result = defaultCylinder(dims);
+      return {
+        g: result.geometry,
+        p: {
+          type: "cylinder",
+          cx: Math.floor(sim.NX / 4),
+          cy: Math.floor(sim.NY / 2),
+          radius: Math.max(4, Math.floor(sim.NY / 8))
+        },
+        charLength: result.charLength
+      };
     } 
    function applyGeometry(sim, { g, p, charLength }) {
-    setCharacteristicLength(sim, charLength);
+      setCharacteristicLength(sim, charLength);
 
-    sim.solidBase        = g.solid;
-    sim.solid            = new Uint8Array(g.solid);
-    sim.wallDist         = g.wallDist;
-    sim.wallAdjacent     = g.wallAdjacent;
-    sim.linkMask         = g.linkMask;
-    sim.linkQ            = g.linkQ;
-    sim.solidList        = g.solidList;
-    sim.fluidSurfaceList = g.fluidSurfaceList;
+      sim.solidBase        = g.solid;
+      sim.solid            = new Uint8Array(g.solid);
+      sim.wallDist         = g.wallDist;
+      sim.wallAdjacent     = g.wallAdjacent;
+      sim.linkMask         = g.linkMask;
+      sim.linkQ            = g.linkQ;
+      sim.solidList        = g.solidList;
+      sim.fluidSurfaceList = g.fluidSurfaceList;
 
-    // Guard — bodyRenderer/userDraw may not exist yet during
-    // the first buildGeometry call (they're created in rAF)
-    if (sim.bodyRenderer) {
-      sim.bodyRenderer.clear();
-      if (sim.params.bodyType !== 'empty') sim.bodyRenderer.draw(p);
-    }
-
-    if (sim.nozzle) {
-      if (sim.params.bodyType === 'nozzle') {
-        setNozzleInlet(sim, Math.floor(sim.NY / 2), sim.params.nozzleDiameter, U_COFLOW);
-      } else {
-        clearNozzleInlet(sim);
+      if (sim.bodyRenderer) {
+        sim.bodyRenderer.clear();
+        if (sim.params.bodyType !== "empty") sim.bodyRenderer.draw(p);
       }
-    }
 
-    if (sim.userDraw) sim.userDraw.redrawWalls();
-  }
+      if (sim.nozzle) {
+        if (sim.params.bodyType === "nozzle") {
+          setNozzleInlet(sim, Math.floor(sim.NY / 2), sim.params.nozzleDiameter, U_COFLOW);
+        } else {
+          clearNozzleInlet(sim);
+        }
+      }
+
+      if (sim.userDraw) sim.userDraw.redrawWalls();
+    }
 
     function buildGeometry(sim) {
       applyGeometry(sim, resolveGeometry(sim));
@@ -447,136 +800,19 @@ requestAnimationFrame(() => {
 
     function resetSim(sim) {
       if (sim.userDraw) sim.userDraw.clearDrawing();
-      buildGeometry(sim);           // sets solid/linkMask etc + draws body
+      buildGeometry(sim);
       setReynolds(sim, sim.params.reynolds);
       initField(sim, sim.params.u0, sim.solid);
       sim.runtime.frameCount = 0;
-      applyBoundaryConditions(sim, sim.params.u0);
+      sim.runtime.stepCount = 0;
+      const inletU = getInletVelocity(sim);
+      applyBoundaryConditions(sim, inletU);
     }
 
-    // ── COMPARE BUTTON ────────────────────────────────────────
-    const compareBtn     = document.getElementById('compare-btn');
-    const canvasWrap2    = document.getElementById('canvas-wrap-2');
-    const target1Btn    = document.getElementById('flow-label-1');
-    const target2Btn    = document.getElementById('flow-label-2');
-    const flowTargetBar = document.getElementById('flow-target-bar');
-    const gridGroup = ["grid-low", "grid-mid", "grid-high"];
-
-
-        // Which sims the control panel currently drives
-    // In single mode: [sim1]. In compare mode: subset of [sim1, sim2]
-    // based on which Flow buttons are active.
-    let compareMode = false;
-    let target1Active = true;  // Flow 1 button state
-    let target2Active = true;  // Flow 2 button state (both on = sync)
-
-    // Returns the list of sims the control panel currently targets
-    function targetedSims() {
-      if (!compareMode) return [sim1];
-      const out = [];
-      if (target1Active && sim1) out.push(sim1);
-      if (target2Active && sim2) out.push(sim2);
-      return out;
-    }
-
-    function forEachSim(fn) {
-      if (sim1) fn(sim1);
-      if (sim2) fn(sim2);
-    }
-    function forAllSims(fn) {
-      if (sim1 && sim1.solid) fn(sim1);
-      if (compareMode && sim2 && sim2.solid) fn(sim2);
-    }
-
-    // Add this helper
-    function dropFidelity(currentKey) {
-      if (currentKey === 'high') return 'mid';
-      return 'low'; // mid→low, low→low
-    }
-    function raiseFidelity(currentKey) {
-      if (currentKey === 'low') return 'mid';
-      return 'high'; // mid→high, high→high
-    }
-
-
-
-
-// Show/hide and sync canvas overlay buttons with compare mode
-    function updateFlowLabels() {
-      flowTargetBar.style.display = compareMode ? '' : 'none';
-      target1Btn.classList.toggle('active', target1Active);
-      target2Btn.classList.toggle('active', target2Active);
-    }
-
-
-    target1Btn.addEventListener('click', () => {
-      if (target1Active && !target2Active) return; // can't deactivate last one
-      target1Active = !target1Active;
-      updateFlowLabels();
-    });
-
-    target2Btn.addEventListener('click', () => {
-      if (target2Active && !target1Active) return;
-      target2Active = !target2Active;
-      updateFlowLabels();
-    });
-
-    compareBtn.addEventListener('click', () => {
-      compareMode = !compareMode;
-      compareBtn.classList.toggle('active', compareMode);
-      canvasWrap2.style.display    = compareMode ? '' : 'none';
-
-      if (compareMode) {
-        canvasWrap2.offsetWidth;
-
-        const droppedKey = dropFidelity(currentGridKey);
-        if (droppedKey !== currentGridKey) {
-          currentGridKey = droppedKey;
-          setActiveBtn(gridGroup, `grid-${droppedKey}`);
-          updateGridStats();
-        }
-
-        const currentBodyType = sim1 ? sim1.params.bodyType : 'airfoil';
-        const currentAoaDeg   = sim1 ? sim1.params.aoaDeg   : 10;
-
-        sim1 = createSim('sim1', currentBodyType, currentAoaDeg);
-        setupSim(sim1, 'flow-canvas-1', 'body-canvas-1', 'wall-canvas-1');
-
-        sim2 = createSim('sim2', currentBodyType, currentAoaDeg);
-        setupSim(sim2, 'flow-canvas-2', 'body-canvas-2', 'wall-canvas-2');
-        updateFlowLabels();
-
-      } else {
-        const raisedKey = raiseFidelity(currentGridKey);
-        if (raisedKey !== currentGridKey) {
-          currentGridKey = raisedKey;
-          setActiveBtn(gridGroup, `grid-${raisedKey}`);
-          updateGridStats();
-          updateFlowLabels();
-        }
-
-        const currentBodyType = sim1 ? sim1.params.bodyType : 'airfoil';
-        const currentAoaDeg   = sim1 ? sim1.params.aoaDeg   : 10;
-
-        sim1 = createSim('sim1', currentBodyType, currentAoaDeg);
-        setupSim(sim1, 'flow-canvas-1', 'body-canvas-1', 'wall-canvas-1');
-
-        sim2 = null;
-        target1Active = true;
-        target2Active = true;
-        target1Btn.classList.add('active');
-        target2Btn.classList.add('active');
-      }
-    });
-
-
-
-    function setActiveBtn(ids, activeId) {
-      ids.forEach(id => document.getElementById(id).classList.remove("active"));
-      document.getElementById(activeId).classList.add("active");
-    }
-
-   function canvasToLattice(canvas, clientX, clientY, sim) {
+    // =====================================================
+    // Input mapping / canvas drawing
+    // =====================================================
+    function canvasToLattice(canvas, clientX, clientY, sim) {
       const rect = canvas.getBoundingClientRect();
       return {
         lx: (clientX - rect.left) * (sim.NX / rect.width),
@@ -641,107 +877,144 @@ requestAnimationFrame(() => {
         draw.redrawWalls();
       });
     } 
-
-    function recreateSims() {
-      sim1 = createSim('sim1', sim1 ? sim1.params.bodyType : 'airfoil',
-                              sim1 ? sim1.params.aoaDeg   : 10);
-      setupSim(sim1, 'flow-canvas-1', 'body-canvas-1', 'wall-canvas-1');
-      // bindCanvasInput(sim1);
-      // resetSim(sim1);
-
-      // Only recreate sim2 if compare mode is already active
-      if (compareMode) {
-        sim2 = createSim('sim2', sim2 ? sim2.params.bodyType : 'cylinder',
-                                  sim2 ? sim2.params.aoaDeg   : 0);
-        setupSim(sim2, 'flow-canvas-2', 'body-canvas-2', 'wall-canvas-2');
-        // bindCanvasInput(sim2);
-        // resetSim(sim2);
-      }
-
-      updateGridStats();
+   // =====================================================
+    // Solver stepping / animation
+    // =====================================================
+    function stepOnce(sim) {
+      if (!sim || !sim.solid || !sim.userDraw) return;
+      const inletU = getInletVelocity(sim);
+      collideFused(sim, inletU);
+      stream(sim);
+      applyBoundaryConditions(sim, inletU);
+      sim.runtime.frameCount++;
+      sim.runtime.stepCount++;
     }
 
-    document.getElementById("aoa-row").style.display = "";
+    let lastTime = performance.now();
+    let smoothedFps = 60;
 
-    document.getElementById("u0-slider").addEventListener("input", e => {
-      const u0 = parseFloat(e.target.value);
-      document.getElementById("u0-value").textContent = `Ma ${(u0 / CS_LATTICE).toFixed(2)}`;
-      targetedSims().forEach(sim => {
-        sim.params.u0 = u0;
+    function tick(now) {
+      const dt = now - lastTime;
+      lastTime = now;
+      smoothedFps = 0.9 * smoothedFps + 0.1 * (dt > 0 ? 1000 / dt : 60);
+
+      forAllSims(sim => {
+        if (sim.runtime.running) {
+          for (let s = 0; s < sim.runtime.stepsPerFrame; s++) stepOnce(sim);
+        }
+
+        sim.renderer.draw(
+          { ux: sim.ux, uy: sim.uy, f: sim.f },
+          sim.solid,
+          sim.rho,
+          {
+            mode: sim.display.mode,
+            scale: sim.display.colorScale,
+            autoScale: false,
+            showVectors: sim.display.showVectors,
+            showGrid: sim.display.showGrid,
+            gridFine: sim.display.gridFine,
+            showDist: sim.display.showDist,
+          },
+          sim.paintedNodes
+        );
       });
+
+      document.getElementById("fps-value").textContent = smoothedFps.toFixed(0);
+      document.getElementById("frame-value").textContent =
+        `${sim1 ? sim1.runtime.frameCount : 0}${sim2 ? " / " + sim2.runtime.frameCount : ""}`;
+
+      requestAnimationFrame(tick);
+    }
+
+    // =====================================================
+    // Compare mode handlers
+    // =====================================================
+    target1Btn.addEventListener("click", () => {
+      if (target1Active && !target2Active) return;
+      target1Active = !target1Active;
+      updateFlowLabels();
     });
 
-    document.getElementById("re-slider").addEventListener("input", e => {
-      const reynolds = parseFloat(e.target.value);
-      document.getElementById("re-value").textContent = reynolds.toFixed(0);
-      targetedSims().forEach(sim => {
-        sim.params.reynolds = reynolds;
-        setReynolds(sim, reynolds);
-      });
+    target2Btn.addEventListener("click", () => {
+      if (target2Active && !target1Active) return;
+      target2Active = !target2Active;
+      updateFlowLabels();
     });
 
-    document.getElementById("steps-slider").addEventListener("input", e => {
-      const steps = parseInt(e.target.value, 10);
-      document.getElementById("steps-value").textContent = steps;
-      // Always apply to ALL sims, not just targeted ones
-      forAllSims(sim => { sim.runtime.stepsPerFrame = steps; });
-    });
+    compareBtn.addEventListener("click", () => {
+      compareMode = !compareMode;
+      compareBtn.classList.toggle("active", compareMode);
+ document.querySelector(".compare-wrap")
+    .classList.toggle("compare-active", compareMode); 
+      canvasWrap2.style.display = compareMode ? "" : "none";
 
-    document.getElementById("scale-slider").addEventListener("input", e => {
-      const scale = parseFloat(e.target.value);
-      document.getElementById("scale-value").textContent = scale.toFixed(3);
-      targetedSims().forEach(sim => {
-        sim.display.colorScale = scale;
-      });
-    });
+      if (compareMode) {
+        canvasWrap2.offsetWidth;
 
-    const modeGroup = ["mode-speed", "mode-qcrit"];
-    document.getElementById("mode-speed").addEventListener("click", () => {
-      setActiveBtn(modeGroup, "mode-speed");
-      targetedSims().forEach(sim => sim.display.mode = "speed");
-    });
-    document.getElementById("mode-qcrit").addEventListener("click", () => {
-      setActiveBtn(modeGroup, "mode-qcrit");
-      targetedSims().forEach(sim => sim.display.mode = "qcrit");
-    });
+        const droppedKey = dropFidelity(currentGridKey);
+        if (droppedKey !== currentGridKey) {
+          currentGridKey = droppedKey;
+          setActiveBtn(gridGroup, `grid-${droppedKey}`);
+          updateGridStats();
+        }
 
-    document.getElementById("vector-btn").addEventListener("click", () => {
-      const next = !(sim1 && sim1.display.showVectors);
-      document.getElementById("vector-btn").classList.toggle("active", next);
-      targetedSims().forEach(sim => sim.display.showVectors = next);
-    });
+        const currentBodyType = sim1 ? sim1.params.bodyType : "airfoil";
+        const currentAoaDeg   = sim1 ? sim1.params.aoaDeg   : 10;
 
-    document.getElementById("dist-btn").addEventListener("click", () => {
-      const on = !(sim1 && sim1.display.showGrid);
-      document.getElementById("dist-btn").classList.toggle("active", on);
-      targetedSims().forEach(sim => {
-        sim.display.showGrid = on;
-        sim.display.gridFine = on;
-        sim.display.showDist = on;
-      });
+        sim1 = createSim("sim1", currentBodyType, currentAoaDeg);
+        if (sim1) sim1.params.tandemSpacing = sim1.params.tandemSpacing ?? parseInt(tandemSlider.value, 10);
+        setupSim(sim1, "flow-canvas-1", "body-canvas-1", "wall-canvas-1");
+
+        sim2 = createSim("sim2", currentBodyType, currentAoaDeg);
+        if (sim2) sim2.params.tandemSpacing = sim2.params.tandemSpacing ?? parseInt(tandemSlider.value, 10);
+        setupSim(sim2, "flow-canvas-2", "body-canvas-2", "wall-canvas-2");
+
+        updateFlowLabels();
+      } else {
+        const raisedKey = raiseFidelity(currentGridKey);
+        if (raisedKey !== currentGridKey) {
+          currentGridKey = raisedKey;
+          setActiveBtn(gridGroup, `grid-${raisedKey}`);
+          updateGridStats();
+          updateFlowLabels();
+        }
+
+        const currentBodyType = sim1 ? sim1.params.bodyType : "airfoil";
+        const currentAoaDeg   = sim1 ? sim1.params.aoaDeg   : 10;
+
+        sim1 = createSim("sim1", currentBodyType, currentAoaDeg);
+        if (sim1) sim1.params.tandemSpacing = sim1.params.tandemSpacing ?? parseInt(tandemSlider.value, 10);
+        setupSim(sim1, "flow-canvas-1", "body-canvas-1", "wall-canvas-1");
+
+        sim2 = null;
+        target1Active = true;
+        target2Active = true;
+        target1Btn.classList.add("active");
+        target2Btn.classList.add("active");
+      }
     }); 
-
-   const bodyGroup = ["body-airfoil", "body-blocks", "body-cylinder", "body-empty", "body-nozzle"];
-
-
-    const aoaRow = document.getElementById("aoa-row");
-    const nozzleRow = document.getElementById("nozzle-row");
-    const nozzleSlider = document.getElementById("nozzle-slider");
-    const nozzleOutput = document.getElementById("nozzle-value");
-
+   // =====================================================
+    // Body controls
+    // =====================================================
     function switchBody(type, btnId) {
       setActiveBtn(bodyGroup, btnId);
-      aoaRow.style.display = type === "airfoil" ? "" : "none";
-      nozzleRow.style.display = type === "nozzle" ? "" : "none";
+      updateBodyRows(type);
 
       targetedSims().forEach(sim => {
         sim.params.bodyType = type;
+        if (type === "tandem-cylinders" && typeof sim.params.tandemSpacing !== "number") {
+          sim.params.tandemSpacing = parseInt(tandemSlider.value, 10);
+        }
         rebuildGeometryOnly(sim);
       });
     }
 
     document.getElementById("body-cylinder").addEventListener("click", () => switchBody("cylinder", "body-cylinder"));
     document.getElementById("body-airfoil").addEventListener("click", () => switchBody("airfoil", "body-airfoil"));
+    document.getElementById("body-naca2412").addEventListener("click", () => switchBody("naca2412", "body-naca2412"));
+    document.getElementById("body-square-cylinder").addEventListener("click", () => switchBody("square-cylinder", "body-square-cylinder"));
+    document.getElementById("body-tandem-cylinders").addEventListener("click", () => switchBody("tandem-cylinders", "body-tandem-cylinders"));
     document.getElementById("body-blocks").addEventListener("click", () => switchBody("blocks", "body-blocks"));
     document.getElementById("body-empty").addEventListener("click", () => switchBody("empty", "body-empty"));
     document.getElementById("body-nozzle").addEventListener("click", () => switchBody("nozzle", "body-nozzle"));
@@ -749,15 +1022,19 @@ requestAnimationFrame(() => {
     document.getElementById("aoa-slider").addEventListener("input", e => {
       const aoaDeg = parseFloat(e.target.value);
       document.getElementById("aoa-value").textContent = aoaDeg.toFixed(1) + "°";
+
       targetedSims().forEach(sim => {
         sim.params.aoaDeg = aoaDeg;
-        if (sim.params.bodyType === "airfoil") rebuildGeometryOnly(sim);
+        if (["airfoil", "naca2412", "square-cylinder"].includes(sim.params.bodyType)) {
+          rebuildGeometryOnly(sim);
+        }
       });
     });
 
     nozzleSlider.addEventListener("input", () => {
       const nozzleDiameter = parseInt(nozzleSlider.value, 10);
       nozzleOutput.textContent = nozzleDiameter;
+
       targetedSims().forEach(sim => {
         sim.params.nozzleDiameter = nozzleDiameter;
         if (sim.params.bodyType === "nozzle") {
@@ -767,6 +1044,227 @@ requestAnimationFrame(() => {
       });
     });
 
+    tandemSlider.addEventListener("input", () => {
+      const spacing = parseInt(tandemSlider.value, 10);
+      tandemOutput.textContent = spacing;
+
+      targetedSims().forEach(sim => {
+        sim.params.tandemSpacing = spacing;
+        if (sim.params.bodyType === "tandem-cylinders") {
+          rebuildGeometryOnly(sim);
+        }
+      });
+    });
+
+    // =====================================================
+    // Flow controls
+    // =====================================================
+    document.getElementById("u0-slider").addEventListener("input", e => {
+      const u0 = parseFloat(e.target.value);
+      document.getElementById("u0-value").textContent = `Ma ${(u0 / CS_LATTICE).toFixed(2)}`;
+
+      targetedSims().forEach(sim => {
+        sim.params.u0 = u0;
+      });
+    });
+
+    document.getElementById("re-slider").addEventListener("input", e => {
+      const reynolds = parseFloat(e.target.value);
+      document.getElementById("re-value").textContent = reynolds.toFixed(0);
+
+      targetedSims().forEach(sim => {
+        sim.params.reynolds = reynolds;
+        setReynolds(sim, reynolds);
+      });
+    });
+
+    document.getElementById("pulse-on").addEventListener("click", () => {
+      setActiveBtn(pulseGroup, "pulse-on");
+      updatePulseRows();
+      targetedSims().forEach(sim => {
+        sim.flow.pulsationOn = true;
+      });
+    });
+
+    document.getElementById("pulse-off").addEventListener("click", () => {
+      setActiveBtn(pulseGroup, "pulse-off");
+      updatePulseRows();
+      targetedSims().forEach(sim => {
+        sim.flow.pulsationOn = false;
+      });
+    });
+
+    pulseAmpSlider.addEventListener("input", e => {
+      const amp = parseFloat(e.target.value);
+      pulseAmpValue.textContent = amp.toFixed(2);
+
+      targetedSims().forEach(sim => {
+        sim.flow.pulsationAmp = amp;
+      });
+    });
+
+    pulseFreqSlider.addEventListener("input", e => {
+      const freq = parseFloat(e.target.value);
+      pulseFreqValue.textContent = freq.toFixed(3);
+
+      targetedSims().forEach(sim => {
+        sim.flow.pulsationFreq = freq;
+      });
+    });
+
+   // =====================================================
+    // Physics controls
+    // =====================================================
+    document.getElementById("collision-trt").addEventListener("click", () => {
+      setActiveBtn(collisionGroup, "collision-trt");
+      targetedSims().forEach(sim => {
+        sim.physics.collisionModel = "trt";
+      });
+    });
+
+    document.getElementById("collision-bgk").addEventListener("click", () => {
+      setActiveBtn(collisionGroup, "collision-bgk");
+      targetedSims().forEach(sim => {
+        sim.physics.collisionModel = "bgk";
+      });
+    });
+
+    document.getElementById("les-smag").addEventListener("click", () => {
+      setActiveBtn(lesGroup, "les-smag");
+      targetedSims().forEach(sim => {
+        sim.physics.lesModel = "smagorinsky";
+      });
+    });
+
+    document.getElementById("les-wale").addEventListener("click", () => {
+      setActiveBtn(lesGroup, "les-wale");
+      targetedSims().forEach(sim => {
+        sim.physics.lesModel = "wale";
+      });
+    });
+
+    // document.getElementById("les-off").addEventListener("click", () => {
+    //   setActiveBtn(lesGroup, "les-off");
+    //   targetedSims().forEach(sim => {
+    //     sim.physics.lesModel = "off";
+    //   });
+    // });
+
+    document.getElementById("wall-on").addEventListener("click", () => {
+      setActiveBtn(wallGroup, "wall-on");
+      targetedSims().forEach(sim => {
+        sim.physics.wallModel = true;
+      });
+    });
+
+    document.getElementById("wall-off").addEventListener("click", () => {
+      setActiveBtn(wallGroup, "wall-off");
+      targetedSims().forEach(sim => {
+        sim.physics.wallModel = false;
+      });
+    });
+
+    // =====================================================
+    // Display controls
+    // =====================================================
+    document.getElementById("mode-speed").addEventListener("click", () => {
+      setActiveBtn(modeGroup, "mode-speed");
+      targetedSims().forEach(sim => sim.display.mode = "speed");
+    });
+
+    document.getElementById("mode-qcrit").addEventListener("click", () => {
+      setActiveBtn(modeGroup, "mode-qcrit");
+      targetedSims().forEach(sim => sim.display.mode = "qcrit");
+    });
+
+    document.getElementById("vector-btn").addEventListener("click", () => {
+  const sims = targetedSims();
+  if (sims.length === 0) return;
+  const next = !sims.every(sim => sim.display.showVectors);
+  document.getElementById("vector-btn").classList.toggle("active", next);
+  sims.forEach(sim => {
+    sim.display.showVectors = next;
+  });
+});
+
+document.getElementById("dist-btn").addEventListener("click", () => {
+  const sims = targetedSims();
+  if (sims.length === 0) return;
+  const on = !sims.every(sim => sim.display.showGrid);
+  document.getElementById("dist-btn").classList.toggle("active", on);
+  sims.forEach(sim => {
+    sim.display.showGrid = on;
+    sim.display.gridFine = on;
+    sim.display.showDist = on;
+  });
+});
+
+
+    document.getElementById("scale-slider").addEventListener("input", e => {
+      const scale = parseFloat(e.target.value);
+      document.getElementById("scale-value").textContent = scale.toFixed(3);
+
+      targetedSims().forEach(sim => {
+        sim.display.colorScale = scale;
+      });
+    }); 
+
+
+    // =====================================================
+    // Runtime / control actions
+    // =====================================================
+    document.getElementById("steps-slider").addEventListener("input", e => {
+      const steps = parseInt(e.target.value, 10);
+      document.getElementById("steps-value").textContent = steps;
+
+      forAllSims(sim => {
+        sim.runtime.stepsPerFrame = steps;
+      });
+    });
+
+    sandboxBtn.addEventListener("click", () => {
+      sandboxActive = !sandboxActive;
+      sandboxBtn.classList.toggle("active", sandboxActive);
+
+      if (sim1) sim1.flowCanvas.style.cursor = sandboxActive ? "crosshair" : "default";
+      if (sim2) sim2.flowCanvas.style.cursor = sandboxActive ? "crosshair" : "default";
+    });
+
+    clearBtn.addEventListener("click", () => {
+      targetedSims().forEach(sim => {
+        sim.userDraw.clearDrawing();
+        sim.userDraw.redrawWalls();
+      });
+    });
+
+  pauseBtn.addEventListener("click", () => {
+  const anyRunning =
+    (sim1 && sim1.runtime.running) ||
+    (sim2 && sim2.runtime.running);
+
+  const next = !anyRunning;
+
+  pauseBtn.textContent = next ? "Pause" : "Resume";
+  pauseBtn.classList.toggle("active", !next);
+
+  if (sim1) sim1.runtime.running = next;
+  if (sim2) sim2.runtime.running = next;
+});
+
+document.getElementById("reset-btn").addEventListener("click", () => {
+  if (sim1) resetSim(sim1);
+  if (sim2) resetSim(sim2);
+});
+
+
+    document.getElementById("reset-btn").addEventListener("click", () => {
+      if (sim1) resetSim(sim1);
+      if (sim2) resetSim(sim2);
+    });
+
+    // =====================================================
+    // Grid controls
+    // =====================================================
     document.getElementById("grid-low").addEventListener("click", () => {
       currentGridKey = "low";
       setActiveBtn(gridGroup, "grid-low");
@@ -785,81 +1283,18 @@ requestAnimationFrame(() => {
       recreateSims();
     });
 
-    const sandboxBtn = document.getElementById("sandbox-btn");
-    const clearBtn = document.getElementById("clear-btn");
-
-    sandboxBtn.addEventListener("click", () => {
-      sandboxActive = !sandboxActive;
-      sandboxBtn.classList.toggle("active", sandboxActive);
-      if (sim1) sim1.flowCanvas.style.cursor = sandboxActive ? "crosshair" : "default";
-      if (sim2) sim2.flowCanvas.style.cursor = sandboxActive ? "crosshair" : "default";
-    });
-
-    clearBtn.addEventListener("click", () => {
-      targetedSims().forEach(sim => {
-        sim.userDraw.clearDrawing();
-        sim.userDraw.redrawWalls();
-      });
-    });
-
-    const pauseBtn = document.getElementById("pause-btn");
-    pauseBtn.addEventListener("click", () => {
-      const next = !(sim1 && sim1.runtime.running);
-      pauseBtn.textContent = next ? "Pause" : "Resume";
-      pauseBtn.classList.toggle("active", !next);
-      targetedSims().forEach(sim => sim.runtime.running = next);
-    });
-
-    document.getElementById("reset-btn").addEventListener("click", () => {
-      if (sim1) resetSim(sim1);
-      if (sim2) resetSim(sim2);
-    }); 
-
-function stepOnce(sim) {
-  if (!sim || !sim.solid || !sim.userDraw) return;
-  collideFused(sim, sim.params.u0);
-  stream(sim);
-  applyBoundaryConditions(sim, sim.params.u0);
-  sim.runtime.frameCount++;
-}
-
-    let lastTime = performance.now();
-    let smoothedFps = 60;
-
-    function tick(now) {
-      const dt = now - lastTime;
-      lastTime = now;
-      smoothedFps = 0.9 * smoothedFps + 0.1 * (dt > 0 ? 1000 / dt : 60);
-
-      forAllSims(sim => {
-        if (sim.runtime.running) {
-          for (let s = 0; s < sim.runtime.stepsPerFrame; s++) stepOnce(sim);
-        }
-        sim.renderer.draw(
-          { ux: sim.ux, uy: sim.uy, f: sim.f },
-          sim.solid, sim.rho,
-          { mode: sim.display.mode, scale: sim.display.colorScale,
-            autoScale: false, showVectors: sim.display.showVectors,
-            showGrid: sim.display.showGrid, gridFine: sim.display.gridFine,
-            showDist: sim.display.showDist },
-          sim.paintedNodes
-        );
-      });
-
-      document.getElementById('fps-value').textContent = smoothedFps.toFixed(0);
-      document.getElementById('frame-value').textContent =
-        `${sim1 ? sim1.runtime.frameCount : 0}${sim2 ? ' / ' + sim2.runtime.frameCount : ''}`;
-      requestAnimationFrame(tick);
-    }
-
-    const tooltip = document.getElementById("tooltip");
+    // =====================================================
+    // Tooltip behaviour
+    // =====================================================
     document.querySelectorAll(".tooltip-trigger").forEach(el => {
       el.addEventListener("mouseenter", e => {
         tooltip.textContent = el.dataset.tip;
         tooltip.classList.add("visible");
         positionTooltip(e);
       });
+
       el.addEventListener("mousemove", positionTooltip);
+
       el.addEventListener("mouseleave", () => {
         tooltip.classList.remove("visible");
       });
@@ -875,21 +1310,43 @@ function stepOnce(sim) {
       if (y + th > window.innerHeight - pad) y = e.clientY - th - pad;
       tooltip.style.left = x + "px";
       tooltip.style.top  = y + "px";
-    }
-
+    } 
+   // =====================================================
+    // Initial UI text sync
+    // =====================================================
     document.getElementById("u0-value").textContent =
       `Ma ${(parseFloat(document.getElementById("u0-slider").value) / CS_LATTICE).toFixed(2)}`;
+
     document.getElementById("re-value").textContent =
       parseFloat(document.getElementById("re-slider").value).toFixed(0);
+
     document.getElementById("steps-value").textContent =
       parseInt(document.getElementById("steps-slider").value, 10);
+
     document.getElementById("scale-value").textContent =
       parseFloat(document.getElementById("scale-slider").value).toFixed(3);
+
     document.getElementById("aoa-value").textContent =
       parseFloat(document.getElementById("aoa-slider").value).toFixed(1) + "°";
-    document.getElementById("nozzle-value").textContent =
-      parseInt(document.getElementById("nozzle-slider").value, 10);
 
+    nozzleOutput.textContent =
+      parseInt(nozzleSlider.value, 10);
+
+    tandemOutput.textContent =
+      parseInt(tandemSlider.value, 10);
+
+    pulseAmpValue.textContent =
+      parseFloat(pulseAmpSlider.value).toFixed(2);
+
+    pulseFreqValue.textContent =
+      parseFloat(pulseFreqSlider.value).toFixed(3);
+
+    updatePulseRows();
+    updateBodyRows("airfoil");
+
+    // =====================================================
+    // App bootstrap
+    // =====================================================
     updateGridStats();
     recreateSims();
     requestAnimationFrame(tick);

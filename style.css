@@ -1,31 +1,50 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
-/* ── TOKENS ─────────────────────────────────────────────── */
+/* ==========================================================
+   TOKENS
+   Core color, spacing, radius, and font variables
+   ========================================================== */
 :root {
-  --bg:           #060a10;
-  --surface:      #0c1018;
-  --panel:        rgba(10,16,26,0.95);
-  --border:       rgba(80,160,255,0.12);
-  --border-hi:    rgba(80,160,255,0.28);
-  --txt:          #c8d8f0;
-  --txt-dim:      #4a6080;
-  --txt-muted:    #2a3a50;
-  --cyan:         #38c8ff;
-  --cyan-glow:    rgba(56,200,255,0.22);
-  --cyan-dim:     rgba(56,200,255,0.07);
-  --active-bg:    rgba(56,200,255,0.12);
-  --active-border:rgba(56,200,255,0.5);
-  --danger:       #ff4466;
-  --danger-glow:  rgba(255,68,102,0.18);
-  --radius-sm:    5px;
-  --radius:       9px;
-  --radius-lg:    12px;
+  --bg:            #060a10;
+  --surface:       #0c1018;
+  --panel:         rgba(10,16,26,0.95);
+
+  --border:        rgba(80,160,255,0.12);
+  --border-hi:     rgba(80,160,255,0.28);
+
+  --txt:           #c8d8f0;
+  --txt-dim:       #4a6080;
+  --txt-muted:     #2a3a50;
+
+  --cyan:          #38c8ff;
+  --cyan-glow:     rgba(56,200,255,0.22);
+  --cyan-dim:      rgba(56,200,255,0.07);
+
+  --active-bg:     rgba(56,200,255,0.12);
+  --active-border: rgba(56,200,255,0.5);
+
+  --danger:        #ff4466;
+  --danger-glow:   rgba(255,68,102,0.18);
+
+  --radius-sm:     5px;
+  --radius:        9px;
+  --radius-lg:     12px;
+
   --mono: 'JetBrains Mono', monospace;
 }
 
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* ==========================================================
+   RESET / BASE
+   Global reset and base typography
+   ========================================================== */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
 
-html, body {
+html,
+body {
   height: 100%;
   background: var(--bg);
   color: var(--txt);
@@ -35,18 +54,31 @@ html, body {
   line-height: 1.5;
 }
 
-/* ── APP SHELL ───────────────────────────────────────────── */
+/* ==========================================================
+   APP SHELL
+   Overall layout wrapper
+   ========================================================== */
 .app {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  padding: 18px 22px 28px;
-  gap: 12px;
   max-width: 1440px;
   margin: 0 auto;
+  padding: 18px 22px 28px;
+  gap: 12px;
 }
 
-/* ── HEADER ──────────────────────────────────────────────── */
+.app-main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+
+/* ==========================================================
+   HEADER
+   Title, subtitle, and credit link
+   ========================================================== */
 .app-header {
   display: flex;
   align-items: baseline;
@@ -55,15 +87,17 @@ html, body {
 }
 
 .app-header h1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
   font-size: clamp(13px, 1.4vw, 18px);
   font-weight: 400;
   letter-spacing: 0.18em;
   text-transform: uppercase;
+
   color: var(--txt);
   text-shadow: 0 0 28px var(--cyan-glow);
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 
 .tag {
@@ -71,11 +105,12 @@ html, body {
   font-size: 0.58rem;
   font-weight: 500;
   letter-spacing: 0.1em;
+
   background: var(--active-bg);
   color: var(--cyan);
   border: 1px solid var(--active-border);
-  padding: 2px 7px;
   border-radius: 999px;
+  padding: 2px 7px;
 }
 
 .subtitle {
@@ -85,101 +120,56 @@ html, body {
   letter-spacing: 0.1em;
 }
 
-/* ── MAIN LAYOUT ─────────────────────────────────────────── */
-.app-main {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  flex: 1;
+.credit {
+  margin-left: auto;
+
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  color: var(--cyan);
+  letter-spacing: 0.08em;
+  text-decoration: none;
+
+  transition: color 0.15s, text-shadow 0.15s;
+  text-shadow: 0 0 9px var(--cyan-glow);
 }
 
-/* ── TOP CONTROL PANEL ───────────────────────────────────── */
+.credit:hover {
+  color: var(--cyan);
+  text-shadow: 0 0 9px var(--cyan-glow);
+}
+
+.credit-name {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+} 
+/* ==========================================================
+   HUD / CONTROL PANEL
+   Top bar with grouped controls
+   ========================================================== */
 .hud {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 0;
+
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 10px 16px;
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 0;
-  align-items: stretch;
+
   backdrop-filter: blur(12px);
   overflow-x: auto;
 }
 
-/* ── COMPARE LAYOUT ──────────────────────────────────────── */
-/*
- * Flexbox instead of grid so that when canvas-wrap-2 is
- * display:none it collapses completely and canvas-wrap-1
- * expands to fill the full width automatically.
- * When both are visible they each get flex:1 = equal halves.
- */
-.compare-wrap {
-  display: flex;
-  flex-direction: row;
-  gap: 10px;
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-}
-
-/* ── CANVAS STACK ────────────────────────────────────────── */
-/*
- * flex:1 on each canvas-wrap means:
- *   - 1 visible  → takes 100% of compare-wrap width
- *   - 2 visible  → each takes 50%
- * min-width:0 prevents flex children from overflowing.
- */
-.canvas-wrap {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  border: 1px solid var(--border);
-  box-shadow: 0 0 60px rgba(56,200,255,0.03);
-  display: grid;           /* ← use grid instead of position:relative alone */
-  grid-template-rows: auto; /* ← height follows content, not container */
-  align-items: start;      /* ← stack children at top */
-}
-
-/*
- * aspect-ratio keeps the canvas at 2:1 (256×128).
- * width:100% fills the flex cell; height follows aspect-ratio.
- * When the cell is half the viewport (compare mode), the canvas
- * naturally shrinks to half — no JS needed.
- */
-#flow-canvas-1,
-#flow-canvas-2 {
-  display: block;
-  width: 100%;
-  height: auto;
-  aspect-ratio: 256 / 128;
-  background: #060a10;
-}
-
-#body-canvas-1,
-#wall-canvas-1,
-#body-canvas-2,
-#wall-canvas-2 {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  aspect-ratio: 256 / 128;  /* ← match flow canvas, don't use height:100% */
-  height: auto;              /* ← let aspect-ratio control height */
-  pointer-events: none;
-}
-
-/* ── CONTROL GROUP ───────────────────────────────────────── */
 .ctrl-group {
   display: flex;
   flex-direction: column;
   gap: 6px;
+
+  flex-shrink: 0;
   padding: 4px 14px 4px 0;
   margin-right: 14px;
   border-right: 1px solid var(--border);
-  flex-shrink: 0;
 }
 
 .ctrl-group:last-of-type {
@@ -198,77 +188,43 @@ html, body {
   margin-bottom: 1px;
 }
 
-/* ── SLIDER CONTROL ──────────────────────────────────────── */
-.slider-row {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 130px;
-}
-
-.slider-row label {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  font-size: 0.68rem;
-  color: var(--txt-dim);
-  font-weight: 300;
-}
-
-.slider-row output {
-  font-family: var(--mono);
-  font-size: 0.66rem;
-  color: var(--cyan);
-  font-weight: 400;
-}
-
-.slider-row input[type="range"] {
-  width: 100%;
-  height: 2px;
-  appearance: none;
-  background: var(--border-hi);
-  border-radius: 2px;
-  outline: none;
-  cursor: pointer;
-}
-
-.slider-row input[type="range"]::-webkit-slider-thumb {
-  appearance: none;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--cyan);
-  box-shadow: 0 0 7px var(--cyan-glow);
-  cursor: pointer;
-  transition: box-shadow 0.15s;
-}
-
-.slider-row input[type="range"]:hover::-webkit-slider-thumb {
-  box-shadow: 0 0 13px var(--cyan);
-}
-
-/* ── BUTTON GRID ─────────────────────────────────────────── */
+/* ==========================================================
+   BUTTONS / BUTTON GROUPS
+   Shared control button styling
+   ========================================================== */
 .btn-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
 }
 
-/* ── BASE BUTTON ─────────────────────────────────────────── */
+.btn-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .btn {
   font-family: 'Inter', system-ui, sans-serif;
   font-size: 0.68rem;
   font-weight: 400;
   letter-spacing: 0.05em;
+  line-height: 1.6;
+  white-space: nowrap;
+
   padding: 4px 10px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-hi);
+
   background: transparent;
   color: var(--txt-dim);
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s, background 0.15s, box-shadow 0.15s;
-  white-space: nowrap;
-  line-height: 1.6;
+
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s;
 }
 
 .btn:hover {
@@ -297,11 +253,14 @@ html, body {
   box-shadow: 0 0 9px var(--danger-glow);
 }
 
-/* ── SIM INFO / FIDELITY BUTTONS ─────────────────────────── */
-.ctrl-group .btn-grid + .stat {
-  margin-top: 4px;
+.btn-stack .btn {
+  width: 100%;
+  text-align: center;
+  font-family: var(--mono);
+  letter-spacing: 0.08em;
 }
 
+/* Fidelity stack */
 #grid-low,
 #grid-mid,
 #grid-high {
@@ -309,59 +268,67 @@ html, body {
   text-align: center;
   font-family: var(--mono);
   letter-spacing: 0.08em;
+} 
+/* ==========================================================
+   SLIDERS
+   Range controls and inline labels
+   ========================================================== */
+.slider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 130px;
 }
 
-/* ── COMPARE TARGET BUTTONS ──────────────────────────────── */
-/*
- * Flow 1 / Flow 2 buttons get a distinct teal tint when active
- * so you can see at a glance which canvases the control panel
- * is currently targeting. Uses the same active-bg/border tokens
- * but with a slightly warmer glow to differentiate from plain
- * mode/overlay active buttons.
- */
-#target-1.active,
-#target-2.active {
-  border-color: var(--cyan);
-  color: var(--cyan);
-  background: var(--active-bg);
-  box-shadow: 0 0 12px var(--cyan-glow), inset 0 0 8px rgba(56,200,255,0.07);
+.slider-row label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+
+  font-size: 0.68rem;
+  font-weight: 300;
+  color: var(--txt-dim);
 }
 
-/* ── CANVAS LABEL OVERLAY ────────────────────────────────── */
-/*
- * Optional: a small "Flow 1" / "Flow 2" label badge
- * rendered via CSS pseudo-elements on each canvas-wrap
- * so the user always knows which canvas is which in compare mode.
- * The data-label attribute is set by index.html JS.
- */
-.canvas-wrap[data-label]::before {
-  content: attr(data-label);
-  position: absolute;
-  top: 8px;
-  left: 10px;
-  z-index: 10;
+.slider-row output {
   font-family: var(--mono);
-  font-size: 0.6rem;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-size: 0.66rem;
+  font-weight: 400;
   color: var(--cyan);
-  background: rgba(6,10,16,0.75);
-  border: 1px solid var(--border-hi);
-  border-radius: var(--radius-sm);
-  padding: 2px 7px;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.2s;
 }
 
-/* Only show the label when compare mode is active —
-   toggled by adding .compare-active to .compare-wrap */
-.compare-wrap.compare-active .canvas-wrap[data-label]::before {
-  opacity: 1;
+.slider-row input[type="range"] {
+  width: 100%;
+  height: 2px;
+  appearance: none;
+  outline: none;
+  cursor: pointer;
+
+  background: var(--border-hi);
+  border-radius: 2px;
 }
 
-/* ── STATS ───────────────────────────────────────────────── */
+.slider-row input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+
+  background: var(--cyan);
+  box-shadow: 0 0 7px var(--cyan-glow);
+  cursor: pointer;
+
+  transition: box-shadow 0.15s;
+}
+
+.slider-row input[type="range"]:hover::-webkit-slider-thumb {
+  box-shadow: 0 0 13px var(--cyan);
+}
+
+/* ==========================================================
+   STATS / INFO BLOCKS
+   Numeric stats in HUD and sim info area
+   ========================================================== */
 .stats {
   display: flex;
   gap: 14px;
@@ -378,210 +345,40 @@ html, body {
   font-family: var(--mono);
   font-size: 0.55rem;
   letter-spacing: 0.14em;
-  color: var(--txt-muted);
   text-transform: uppercase;
+  color: var(--txt-muted);
 }
 
 .stat-value {
   font-family: var(--mono);
   font-size: 1rem;
   font-weight: 500;
+  line-height: 1;
   color: var(--cyan);
   text-shadow: 0 0 8px var(--cyan-glow);
-  line-height: 1;
 }
 
-/* ── ERROR ───────────────────────────────────────────────── */
-.error {
-  font-family: var(--mono);
-  font-size: 0.62rem;
-  color: var(--danger);
-  min-height: 12px;
-  line-height: 1.4;
-  white-space: pre-wrap;
-  word-break: break-word;
-  align-self: center;
-  margin-left: auto;
+.sim-info-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
 }
 
-/* ── TOOLTIP TRIGGERS ────────────────────────────────────── */
-.tooltip-trigger {
-  cursor: default;
-  border-bottom: none;
-}
-
-.tooltip-trigger:hover {
-  color: var(--cyan);
-  border-bottom: none;
-}
-
-/* ── TOOLTIP POPUP ───────────────────────────────────────── */
-.tooltip {
-  position: fixed;
-  z-index: 999;
-  max-width: 280px;
-  background: var(--panel);
-  border: 1px solid var(--border-hi);
-  border-radius: var(--radius);
-  padding: 9px 12px;
-  font-family: var(--mono);
-  font-size: 0.65rem;
-  color: var(--txt);
-  line-height: 1.6;
-  letter-spacing: 0.03em;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 16px rgba(56,200,255,0.08);
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
-.tooltip.visible {
-  opacity: 1;
-}
-
-/* ── CREDIT LINK ─────────────────────────────────────────── */
-.credit {
-  font-family: var(--mono);
-  font-size: 0.62rem;
-  color: var(--cyan);
-  letter-spacing: 0.08em;
-  text-decoration: none;
-  margin-left: auto;
-  transition: color 0.15s, text-shadow 0.15s;
-  text-shadow: 0 0 9px var(--cyan-glow);
-}
-
-.credit:hover {
-  color: var(--cyan);
-  text-shadow: 0 0 9px var(--cyan-glow);
-}
-
-.credit-name {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-/* ── FOOTER ──────────────────────────────────────────────── */
-.footer p {
-  font-size: 0.68rem;
-  color: var(--txt-dim);
-  line-height: 1.8;
-  letter-spacing: 0.02em;
-  max-width: 100%;
-  text-align: center;
-  margin: 0 auto;
-}
-
-.footer strong {
-  color: var(--txt);
-  font-weight: 500;
-}
-
-/* ── HUD WRAPS ON SMALLER SCREENS ───────────────────────── */
-@media (max-width: 1100px) {
-  .hud {
-    flex-wrap: wrap;
-    gap: 10px;
-    justify-content: flex-start;
-  }
-
-  .ctrl-group {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 10px;
-    margin-right: 0;
-    padding-right: 0;
-    flex: 1 1 160px;
-  }
-
-  .ctrl-group:last-of-type {
-    border-bottom: none;
-  }
-}
-
-/* ── TABLET / SMALL DESKTOP ─────────────────────────────── */
-@media (max-width: 900px) {
-  /* Stack canvases vertically on narrow screens even in compare mode */
-  .compare-wrap {
-    flex-direction: column;
-  }
-}
-
-/* ── MOBILE ──────────────────────────────────────────────── */
-@media (max-width: 700px) {
-  body { padding: 10px 10px 20px; }
-
-  .app-header {
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .credit { margin-left: 0; }
-
-  .hud {
-    flex-direction: column;
-    padding: 10px 12px;
-  }
-
-  .ctrl-group {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    flex: unset;
-    width: 100%;
-  }
-
-  .group-label { width: 100%; }
-
-  .btn { font-size: 0.62rem; padding: 4px 8px; }
-
-  #grid-low,
-  #grid-mid,
-  #grid-high {
-    min-width: 48px;
-  }
-
-  .slider-row { min-width: 100%; }
-
-  .stat-value { font-size: 0.8rem; }
-
-  .footer p { font-size: 0.62rem; }
-}
-
-/* Stacked buttons — vertical column, full width */
-.btn-stack {
+.sim-stats {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.btn-stack .btn {
-  width: 100%;
-  text-align: center;
+.ctrl-group .btn-grid + .stat {
+  margin-top: 4px;
 }
 
-/* Flow label buttons overlaid on canvas */
-.flow-label-btn {
-  position: absolute;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
-  font-family: var(--mono);
-  font-size: 0.6rem;
-  letter-spacing: 0.12em;
-  pointer-events: auto;
-  backdrop-filter: blur(6px);
-  background: rgba(6,10,16,0.75);
-}
-
-.flow-label-btn.active {
-  border-color: var(--cyan);
-  color: var(--cyan);
-  box-shadow: 0 0 9px var(--cyan-glow);
-}
-
+/* ==========================================================
+   COMPARE TARGET BAR
+   Compare-mode target buttons above canvases
+   ========================================================== */
 .flow-target-bar {
   display: flex;
   gap: 8px;
@@ -597,28 +394,281 @@ html, body {
   backdrop-filter: blur(6px);
 }
 
-.sim-info-row {
+/* Target buttons active state */
+#flow-label-1.active,
+#flow-label-2.active {
+  border-color: var(--cyan);
+  color: var(--cyan);
+  background: var(--active-bg);
+  box-shadow: 0 0 12px var(--cyan-glow), inset 0 0 8px rgba(56,200,255,0.07);
+}
+
+/* Optional overlay button style if used later */
+.flow-label-btn {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+
+  pointer-events: auto;
+  backdrop-filter: blur(6px);
+  background: rgba(6,10,16,0.75);
+}
+
+.flow-label-btn.active {
+  border-color: var(--cyan);
+  color: var(--cyan);
+  box-shadow: 0 0 9px var(--cyan-glow);
+}
+
+/* ==========================================================
+   CANVAS / SIM AREA
+   Compare layout and stacked rendering canvases
+   ========================================================== */
+.compare-wrap {
   display: flex;
   flex-direction: row;
   gap: 10px;
-  align-items: center;
-}
-
-.sim-stats {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.btn-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.btn-stack .btn {
+  flex: 1;
+  min-height: 0;
   width: 100%;
-  text-align: center;
-  font-family: var(--mono);
-  letter-spacing: 0.08em;
 }
+
+.canvas-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+
+  display: grid;
+  grid-template-rows: auto;
+  align-items: start;
+
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: 0 0 60px rgba(56,200,255,0.03);
+}
+
+#flow-canvas-1,
+#flow-canvas-2 {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 256 / 128;
+  background: #060a10;
+}
+
+#body-canvas-1,
+#wall-canvas-1,
+#body-canvas-2,
+#wall-canvas-2 {
+  position: absolute;
+  top: 0;
+  left: 0;
+
+  width: 100%;
+  height: auto;
+  aspect-ratio: 256 / 128;
+
+  pointer-events: none;
+}
+
+/* Compare labels over each canvas */
+.canvas-wrap[data-label]::before {
+  content: attr(data-label);
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  z-index: 10;
+
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+
+  color: var(--cyan);
+  background: rgba(6,10,16,0.75);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-sm);
+  padding: 2px 7px;
+
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.compare-wrap.compare-active .canvas-wrap[data-label]::before {
+  opacity: 1;
+} 
+/* ==========================================================
+   TOOLTIP / ERROR
+   Shared lightweight feedback components
+   ========================================================== */
+.error {
+  margin-left: auto;
+  align-self: center;
+
+  min-height: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  color: var(--danger);
+}
+
+.tooltip-trigger {
+  cursor: default;
+  border-bottom: none;
+}
+
+.tooltip-trigger:hover {
+  color: var(--cyan);
+  border-bottom: none;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 999;
+  max-width: 280px;
+
+  background: var(--panel);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--txt);
+  line-height: 1.6;
+  letter-spacing: 0.03em;
+
+  box-shadow:
+    0 8px 32px rgba(0,0,0,0.6),
+    0 0 16px rgba(56,200,255,0.08);
+
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.tooltip.visible {
+  opacity: 1;
+}
+
+/* ==========================================================
+   FOOTER
+   Supporting explanatory text
+   ========================================================== */
+.footer p {
+  max-width: 100%;
+  margin: 0 auto;
+
+  text-align: center;
+  font-size: 0.68rem;
+  line-height: 1.8;
+  letter-spacing: 0.02em;
+  color: var(--txt-dim);
+}
+
+.footer strong {
+  color: var(--txt);
+  font-weight: 500;
+}
+
+/* ==========================================================
+   RESPONSIVE
+   Layout adjustments for smaller screens
+   ========================================================== */
+@media (max-width: 1100px) {
+  .hud {
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: flex-start;
+  }
+
+  .ctrl-group {
+    flex: 1 1 160px;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+    margin-right: 0;
+    padding-right: 0;
+  }
+
+  .ctrl-group:last-of-type {
+    border-bottom: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .compare-wrap {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 700px) {
+  body {
+    padding: 10px 10px 20px;
+  }
+
+  .app-header {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .credit {
+    margin-left: 0;
+  }
+
+  .hud {
+    flex-direction: column;
+    padding: 10px 12px;
+  }
+
+  .ctrl-group {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    flex: unset;
+    width: 100%;
+  }
+
+  .group-label {
+    width: 100%;
+  }
+
+  .btn {
+    font-size: 0.62rem;
+    padding: 4px 8px;
+  }
+
+  #grid-low,
+  #grid-mid,
+  #grid-high {
+    min-width: 48px;
+  }
+
+  .slider-row {
+    min-width: 100%;
+  }
+
+  .stat-value {
+    font-size: 0.8rem;
+  }
+
+  .footer p {
+    font-size: 0.62rem;
+  }
+} 
+
+
+

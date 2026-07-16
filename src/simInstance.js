@@ -12,6 +12,8 @@
 // - Mutable field arrays (f, rho, ux, uy) now live on each sim instance
 // - Geometry/state/display/runtime params are also stored per sim
 // - For global fidelity presets, NX/NY are now passed in at creation time
+// - Version 6: physics config added per sim for solver toggles
+// - Change 1: pulsing inlet flow state added per sim
 // ============================================================
 
 import { Q, RHO0, U0, CX, CY, W } from "./lbm.js";
@@ -19,8 +21,6 @@ import { Q, RHO0, U0, CX, CY, W } from "./lbm.js";
 // ---------------------------------------------------------
 // feqAt(i, r, u, v)
 // ---------------------------------------------------------
-// Local equilibrium population for D2Q9.
-// Kept here so sim instances don't depend on global mutable arrays.
 export function feqAt(i, r, u, v) {
   const cu = CX[i] * u + CY[i] * v;
   const uu = u * u + v * v;
@@ -55,7 +55,6 @@ export function setReynolds(sim, re) {
 // ---------------------------------------------------------
 // initField(sim, u0, solid)
 // ---------------------------------------------------------
-// Initializes macroscopic fields and populations for one sim.
 export function initField(sim, u0 = sim.params.u0, solid = sim.solid) {
   for (let n = 0; n < sim.N; n++) {
     sim.rho[n] = RHO0;
@@ -82,18 +81,33 @@ export function initField(sim, u0 = sim.params.u0, solid = sim.solid) {
 }
 
 // ---------------------------------------------------------
+// getInletVelocity(sim)
+// ---------------------------------------------------------
+// Returns the instantaneous inlet velocity.
+// Pulsation uses multiplicative sinusoidal forcing:
+//   u(t) = u0 * (1 + amp * sin(2π f step))
+// and is clamped to remain non-negative.
+export function getInletVelocity(sim) {
+  const base = sim.params.u0;
+  const flow = sim.flow;
+
+  if (!flow || !flow.pulsationOn) return base;
+
+  const step = sim.runtime?.stepCount || 0;
+  const amp  = flow.pulsationAmp;
+  const freq = flow.pulsationFreq;
+
+  const u = base * (1 + amp * Math.sin(2 * Math.PI * freq * step));
+  return Math.max(0.0, u);
+}
+
+// ---------------------------------------------------------
 // createSimInstance(options)
 // ---------------------------------------------------------
-// Creates one independent simulation object.
-// This is the core object you will pass into collision/stream/boundary.
-//
-// For global fidelity presets, pass NX and NY from the selected preset.
-// Example:
-//   createSimInstance({ id: "sim1", NX: 160, NY: 80, ... })
 export function createSimInstance(options = {}) {
   const {
     // -----------------------------------------------------
-    // Grid dimensions (required for fidelity switching)
+    // Grid dimensions
     // -----------------------------------------------------
     NX = 256,
     NY = 128,
@@ -118,6 +132,20 @@ export function createSimInstance(options = {}) {
     // nozzle defaults
     nozzleCy = Math.floor(NY / 2),
     uCoflow = 0.005,
+
+    // -----------------------------------------------------
+    // Version 6 physics defaults
+    // -----------------------------------------------------
+    collisionModel = "trt",
+    lesModel = "smagorinsky",
+    wallModel = true,
+
+    // -----------------------------------------------------
+    // Change 1: inlet pulsation defaults
+    // -----------------------------------------------------
+    pulsationOn = false,
+    pulsationAmp = 0.10,
+    pulsationFreq = 0.01,
   } = options;
 
   const N = NX * NY;
@@ -140,7 +168,7 @@ export function createSimInstance(options = {}) {
     // Base physical references
     // -----------------------------------------------------
     RHO0,
-    U0, // reference velocity currently used for base viscosity scaling
+    U0,
 
     // -----------------------------------------------------
     // Per-sim Reynolds/viscosity state
@@ -152,7 +180,7 @@ export function createSimInstance(options = {}) {
     OMEGA0: 0,
 
     // -----------------------------------------------------
-    // Core field arrays (independent per sim)
+    // Core field arrays
     // -----------------------------------------------------
     f: new Float32Array(Q * N),
     rho: new Float32Array(N),
@@ -160,7 +188,7 @@ export function createSimInstance(options = {}) {
     uy: new Float32Array(N),
 
     // -----------------------------------------------------
-    // Geometry/state arrays (filled later by geometry build)
+    // Geometry/state arrays
     // -----------------------------------------------------
     solid: null,
     solidBase: null,
@@ -172,7 +200,7 @@ export function createSimInstance(options = {}) {
     linkQ: null,
 
     // -----------------------------------------------------
-    // Scratch buffers that should not be shared between sims
+    // Scratch buffers
     // -----------------------------------------------------
     fSnapshot: new Float32Array(Q * N),
 
@@ -197,6 +225,25 @@ export function createSimInstance(options = {}) {
     },
 
     // -----------------------------------------------------
+    // Physics state (Version 6)
+    // -----------------------------------------------------
+    physics: {
+      collisionModel,
+      lesModel,
+      wallModel,
+    },
+
+    // -----------------------------------------------------
+    // Flow state
+    // Change 1: pulsing inlet controls
+    // -----------------------------------------------------
+    flow: {
+      pulsationOn,
+      pulsationAmp,
+      pulsationFreq,
+    },
+
+    // -----------------------------------------------------
     // Display state
     // -----------------------------------------------------
     display: {
@@ -215,6 +262,7 @@ export function createSimInstance(options = {}) {
       running,
       frameCount: 0,
       stepsPerFrame,
+      stepCount: 0,
     },
 
     // -----------------------------------------------------
@@ -228,7 +276,7 @@ export function createSimInstance(options = {}) {
     },
 
     // -----------------------------------------------------
-    // Rendering-related handles (optional, assigned externally)
+    // Rendering-related handles
     // -----------------------------------------------------
     renderer: null,
     flowCanvas: null,
@@ -239,5 +287,6 @@ export function createSimInstance(options = {}) {
   recomputeBaseViscosity(sim);
   return sim;
 }
+
 
 

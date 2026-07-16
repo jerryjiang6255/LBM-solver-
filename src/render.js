@@ -116,7 +116,7 @@ Renderer.prototype.draw = function (fields, solid, rho, options, paintedNodes) {
   const gridFine = (options && options.gridFine !== undefined) ? options.gridFine : true;
   const showDist = (options && options.showDist) || false;
 
-  if (mode === "qcrit") this.smoothVelocity(ux, uy, solid, 2);
+  if (mode === "qcrit") this.smoothVelocity(ux, uy, solid, 3);
 
   for (let n = 0; n < N; n++) {
     if (solid[n]) {
@@ -160,7 +160,7 @@ Renderer.prototype.draw = function (fields, solid, rho, options, paintedNodes) {
     scale = this.smoothedScale * 0.9 || scale;
   }
 
-  const qGain     = 5000;
+  const qGain = scale * 10000;
   const pressGain = 0.55;
   const invScale  = 1 / scale;
 
@@ -496,7 +496,7 @@ Renderer.prototype.drawGrid = function (solid, fField, options) {
           const ex = px + CX_D[i] * armLen;
           const ey = py + CY_D[i] * armLen;
 
-          ctx.strokeStyle = DIR_COLORS[i];
+          ctx.strokeStyle = DIR_COLORS[0];
           ctx.beginPath();
           ctx.moveTo(px, py);
           ctx.lineTo(ex, ey);
