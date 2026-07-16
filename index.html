@@ -130,9 +130,9 @@
           <div class="slider-row" id="pulse-amp-row" style="display:none">
             <label>
               <span>Pulse amplitude</span>
-              <output id="pulse-amp-value">0.10</output>
+              <output id="pulse-amp-value">0.25</output>
             </label>
-            <input type="range" id="pulse-amp-slider" min="0.00" max="0.50" step="0.01" value="0.10" />
+            <input type="range" id="pulse-amp-slider" min="0.00" max="0.50" step="0.01" value="0.25" />
           </div>
           <div class="slider-row" id="pulse-freq-row" style="display:none">
             <label>
@@ -363,7 +363,7 @@
     const GRID_PRESETS = {
       low:  { NX: 160, NY: 80 },
       mid:  { NX: 256, NY: 128 },
-      high: { NX: 384, NY: 192 },
+      high: { NX: 256*2, NY: 128*2 },
     };
 
     const U_COFLOW = 0.005;
@@ -963,11 +963,14 @@
         const currentAoaDeg   = sim1 ? sim1.params.aoaDeg   : 10;
 
         sim1 = createSim("sim1", currentBodyType, currentAoaDeg);
-        if (sim1) sim1.params.tandemSpacing = sim1.params.tandemSpacing ?? parseInt(tandemSlider.value, 10);
+        if (sim1)
+            sim1.params.tandemSpacing ??= parseInt(tandemSlider.value, 10);
         setupSim(sim1, "flow-canvas-1", "body-canvas-1", "wall-canvas-1");
 
-        sim2 = createSim("sim2", currentBodyType, currentAoaDeg);
-        if (sim2) sim2.params.tandemSpacing = sim2.params.tandemSpacing ?? parseInt(tandemSlider.value, 10);
+        // Always compare against NACA2412
+        sim2 = createSim("sim2", "naca2412", currentAoaDeg);
+        if (sim2)
+            sim2.params.tandemSpacing ??= parseInt(tandemSlider.value, 10);
         setupSim(sim2, "flow-canvas-2", "body-canvas-2", "wall-canvas-2");
 
         updateFlowLabels();
@@ -1164,50 +1167,40 @@
       });
     });
 
-    // =====================================================
-    // Display controls
-    // =====================================================
-    document.getElementById("mode-speed").addEventListener("click", () => {
-      setActiveBtn(modeGroup, "mode-speed");
-      targetedSims().forEach(sim => sim.display.mode = "speed");
-    });
+// =====================================================
+// Display controls — always affect ALL sims
+// =====================================================
+document.getElementById("mode-speed").addEventListener("click", () => {
+  setActiveBtn(modeGroup, "mode-speed");
+  forAllSims(sim => sim.display.mode = "speed");
+});
 
-    document.getElementById("mode-qcrit").addEventListener("click", () => {
-      setActiveBtn(modeGroup, "mode-qcrit");
-      targetedSims().forEach(sim => sim.display.mode = "qcrit");
-    });
+document.getElementById("mode-qcrit").addEventListener("click", () => {
+  setActiveBtn(modeGroup, "mode-qcrit");
+  forAllSims(sim => sim.display.mode = "qcrit");
+});
 
-    document.getElementById("vector-btn").addEventListener("click", () => {
-  const sims = targetedSims();
-  if (sims.length === 0) return;
-  const next = !sims.every(sim => sim.display.showVectors);
+document.getElementById("vector-btn").addEventListener("click", () => {
+  const next = !sim1?.display.showVectors;
   document.getElementById("vector-btn").classList.toggle("active", next);
-  sims.forEach(sim => {
-    sim.display.showVectors = next;
-  });
+  forAllSims(sim => sim.display.showVectors = next);
 });
 
 document.getElementById("dist-btn").addEventListener("click", () => {
-  const sims = targetedSims();
-  if (sims.length === 0) return;
-  const on = !sims.every(sim => sim.display.showGrid);
+  const on = !sim1?.display.showGrid;
   document.getElementById("dist-btn").classList.toggle("active", on);
-  sims.forEach(sim => {
+  forAllSims(sim => {
     sim.display.showGrid = on;
     sim.display.gridFine = on;
     sim.display.showDist = on;
   });
 });
 
-
-    document.getElementById("scale-slider").addEventListener("input", e => {
-      const scale = parseFloat(e.target.value);
-      document.getElementById("scale-value").textContent = scale.toFixed(3);
-
-      targetedSims().forEach(sim => {
-        sim.display.colorScale = scale;
-      });
-    }); 
+document.getElementById("scale-slider").addEventListener("input", e => {
+  const scale = parseFloat(e.target.value);
+  document.getElementById("scale-value").textContent = scale.toFixed(3);
+  forAllSims(sim => sim.display.colorScale = scale);
+});
 
 
     // =====================================================
