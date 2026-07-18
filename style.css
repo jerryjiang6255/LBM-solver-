@@ -2,11 +2,9 @@
 
 /* ==========================================================
    TOKENS
-   Core color, spacing, radius, and font variables
    ========================================================== */
 :root {
   --bg:            #060a10;
-  --surface:       #0c1018;
   --panel:         rgba(10,16,26,0.95);
 
   --border:        rgba(80,160,255,0.12);
@@ -19,6 +17,14 @@
   --cyan:          #38c8ff;
   --cyan-glow:     rgba(56,200,255,0.22);
   --cyan-dim:      rgba(56,200,255,0.07);
+
+  --orange:        #ffb366;
+  --orange-glow:   rgba(255,179,102,0.22);
+  --orange-dim:    rgba(255,179,102,0.08);
+
+  --purple:        #c78cff;
+  --purple-glow:   rgba(199,140,255,0.22);
+  --purple-dim:    rgba(199,140,255,0.09);
 
   --active-bg:     rgba(56,200,255,0.12);
   --active-border: rgba(56,200,255,0.5);
@@ -35,7 +41,6 @@
 
 /* ==========================================================
    RESET / BASE
-   Global reset and base typography
    ========================================================== */
 *, *::before, *::after {
   box-sizing: border-box;
@@ -56,7 +61,6 @@ body {
 
 /* ==========================================================
    APP SHELL
-   Overall layout wrapper
    ========================================================== */
 .app {
   display: flex;
@@ -77,7 +81,6 @@ body {
 
 /* ==========================================================
    HEADER
-   Title, subtitle, and credit link
    ========================================================== */
 .app-header {
   display: flex;
@@ -90,12 +93,10 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-
   font-size: clamp(13px, 1.4vw, 18px);
   font-weight: 400;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-
   color: var(--txt);
   text-shadow: 0 0 28px var(--cyan-glow);
 }
@@ -105,7 +106,6 @@ body {
   font-size: 0.58rem;
   font-weight: 500;
   letter-spacing: 0.1em;
-
   background: var(--active-bg);
   color: var(--cyan);
   border: 1px solid var(--active-border);
@@ -122,13 +122,11 @@ body {
 
 .credit {
   margin-left: auto;
-
   font-family: var(--mono);
   font-size: 0.62rem;
   color: var(--cyan);
   letter-spacing: 0.08em;
   text-decoration: none;
-
   transition: color 0.15s, text-shadow 0.15s;
   text-shadow: 0 0 9px var(--cyan-glow);
 }
@@ -141,22 +139,20 @@ body {
 .credit-name {
   text-decoration: underline;
   text-underline-offset: 3px;
-} 
+}
+
 /* ==========================================================
    HUD / CONTROL PANEL
-   Top bar with grouped controls
    ========================================================== */
 .hud {
   display: flex;
   flex-wrap: nowrap;
   align-items: stretch;
   gap: 0;
-
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 10px 16px;
-
   backdrop-filter: blur(12px);
   overflow-x: auto;
 }
@@ -165,7 +161,6 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-
   flex-shrink: 0;
   padding: 4px 14px 4px 0;
   margin-right: 14px;
@@ -190,7 +185,6 @@ body {
 
 /* ==========================================================
    BUTTONS / BUTTON GROUPS
-   Shared control button styling
    ========================================================== */
 .btn-grid {
   display: flex;
@@ -211,20 +205,18 @@ body {
   letter-spacing: 0.05em;
   line-height: 1.6;
   white-space: nowrap;
-
   padding: 4px 10px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-hi);
-
   background: transparent;
   color: var(--txt-dim);
   cursor: pointer;
-
   transition:
     border-color 0.15s,
     color 0.15s,
     background 0.15s,
-    box-shadow 0.15s;
+    box-shadow 0.15s,
+    opacity 0.15s;
 }
 
 .btn:hover {
@@ -260,7 +252,6 @@ body {
   letter-spacing: 0.08em;
 }
 
-/* Fidelity stack */
 #grid-low,
 #grid-mid,
 #grid-high {
@@ -268,15 +259,62 @@ body {
   text-align: center;
   font-family: var(--mono);
   letter-spacing: 0.08em;
+}
+
+/* ==========================================================
+   TARGETED CONTROL STATES
+   ========================================================== */
+.control-btn.target-flow1.active {
+  border-color: var(--cyan);
+  color: var(--cyan);
+  background: rgba(56,200,255,0.12);
+  box-shadow: 0 0 10px var(--cyan-glow), inset 0 0 6px rgba(56,200,255,0.05);
+}
+
+.control-btn.target-flow2.active {
+  border-color: var(--orange);
+  color: var(--orange);
+  background: rgba(255,179,102,0.12);
+  box-shadow: 0 0 10px var(--orange-glow), inset 0 0 6px rgba(255,179,102,0.05);
+}
+
+.control-btn.target-both.active {
+  border-color: var(--purple);
+  color: var(--purple);
+  background: rgba(199,140,255,0.13);
+  box-shadow: 0 0 10px var(--purple-glow), inset 0 0 6px rgba(199,140,255,0.05);
+}
+
+.control-btn.target-flow1:not(.active) {
+  border-color: rgba(56,200,255,0.25);
+}
+
+.control-btn.target-flow2:not(.active) {
+  border-color: rgba(255,179,102,0.25);
+}
+
+.control-btn.target-both:not(.active) {
+  border-color: rgba(199,140,255,0.28);
+}
+
+.control-btn.target-flow2:hover {
+  border-color: var(--orange);
+  color: var(--orange);
+  background: var(--orange-dim);
+}
+
+.control-btn.target-both:hover {
+  border-color: var(--purple);
+  color: var(--purple);
+  background: var(--purple-dim);
 } 
 /* ==========================================================
    SLIDERS
-   Range controls and inline labels
    ========================================================== */
 .slider-row {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   min-width: 130px;
 }
 
@@ -284,7 +322,6 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-
   font-size: 0.68rem;
   font-weight: 300;
   color: var(--txt-dim);
@@ -303,9 +340,9 @@ body {
   appearance: none;
   outline: none;
   cursor: pointer;
-
   background: var(--border-hi);
   border-radius: 2px;
+  transition: opacity 0.15s, filter 0.15s;
 }
 
 .slider-row input[type="range"]::-webkit-slider-thumb {
@@ -313,21 +350,117 @@ body {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-
   background: var(--cyan);
   box-shadow: 0 0 7px var(--cyan-glow);
   cursor: pointer;
-
-  transition: box-shadow 0.15s;
+  transition: box-shadow 0.15s, background 0.15s, border-color 0.15s;
+  border: 1px solid rgba(255,255,255,0.18);
 }
 
 .slider-row input[type="range"]:hover::-webkit-slider-thumb {
   box-shadow: 0 0 13px var(--cyan);
 }
 
+.slider-row input[type="range"]::-moz-range-track {
+  height: 2px;
+  background: var(--border-hi);
+  border-radius: 2px;
+}
+
+.slider-row input[type="range"]::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--cyan);
+  border: 1px solid rgba(255,255,255,0.18);
+  box-shadow: 0 0 7px var(--cyan-glow);
+  cursor: pointer;
+}
+
+/* Flow 1 slider */
+.slider-row input[type="range"].control-slider.slider-flow1::-webkit-slider-thumb {
+  background: var(--cyan);
+  box-shadow: 0 0 9px var(--cyan-glow);
+}
+
+.slider-row input[type="range"].control-slider.slider-flow1::-moz-range-thumb {
+  background: var(--cyan);
+  box-shadow: 0 0 9px var(--cyan-glow);
+}
+
+/* Flow 2 slider */
+.slider-row input[type="range"].control-slider.slider-flow2::-webkit-slider-thumb {
+  background: var(--orange);
+  box-shadow: 0 0 9px var(--orange-glow);
+}
+
+.slider-row input[type="range"].control-slider.slider-flow2::-moz-range-thumb {
+  background: var(--orange);
+  box-shadow: 0 0 9px var(--orange-glow);
+}
+
+/* Both flows slider */
+.slider-row input[type="range"].control-slider.slider-both::-webkit-slider-thumb {
+  background: var(--purple);
+  box-shadow: 0 0 9px var(--purple-glow);
+}
+
+.slider-row input[type="range"].control-slider.slider-both::-moz-range-thumb {
+  background: var(--purple);
+  box-shadow: 0 0 9px var(--purple-glow);
+}
+
+/* Track tint by mode */
+.slider-row input[type="range"].control-slider.slider-flow1 {
+  background: linear-gradient(90deg, rgba(56,200,255,0.25), rgba(80,160,255,0.18));
+}
+
+.slider-row input[type="range"].control-slider.slider-flow2 {
+  background: linear-gradient(90deg, rgba(255,179,102,0.28), rgba(255,160,80,0.16));
+}
+
+.slider-row input[type="range"].control-slider.slider-both {
+  background: linear-gradient(90deg, rgba(199,140,255,0.28), rgba(120,120,255,0.16));
+}
+
+/* Both-same */
+.slider-row input[type="range"].control-slider.slider-both-same::-webkit-slider-thumb {
+  background: var(--purple);
+  box-shadow: 0 0 10px var(--purple-glow);
+}
+
+.slider-row input[type="range"].control-slider.slider-both-same::-moz-range-thumb {
+  background: var(--purple);
+  box-shadow: 0 0 10px var(--purple-glow);
+}
+
+/* Both-different */
+.slider-row input[type="range"].control-slider.slider-both-diff::-webkit-slider-thumb {
+  background: linear-gradient(135deg, var(--cyan) 0%, var(--orange) 100%);
+  box-shadow: 0 0 10px rgba(199,140,255,0.20);
+}
+
+.slider-row input[type="range"].control-slider.slider-both-diff::-moz-range-thumb {
+  background: var(--purple);
+  box-shadow: 0 0 10px rgba(199,140,255,0.20);
+}
+
+
+
+.control-slider:disabled {
+  opacity: 0.45;
+  cursor: default;
+  filter: saturate(0.65);
+}
+
+.control-slider:disabled::-webkit-slider-thumb,
+.control-slider:disabled::-moz-range-thumb {
+  cursor: default;
+  box-shadow: none;
+}
+
 /* ==========================================================
    STATS / INFO BLOCKS
-   Numeric stats in HUD and sim info area
    ========================================================== */
 .stats {
   display: flex;
@@ -358,26 +491,8 @@ body {
   text-shadow: 0 0 8px var(--cyan-glow);
 }
 
-.sim-info-row {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
-}
-
-.sim-stats {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.ctrl-group .btn-grid + .stat {
-  margin-top: 4px;
-}
-
 /* ==========================================================
    COMPARE TARGET BAR
-   Compare-mode target buttons above canvases
    ========================================================== */
 .flow-target-bar {
   display: flex;
@@ -394,41 +509,21 @@ body {
   backdrop-filter: blur(6px);
 }
 
-/* Target buttons active state */
-#flow-label-1.active,
-#flow-label-2.active {
+#flow-label-1.active {
   border-color: var(--cyan);
   color: var(--cyan);
-  background: var(--active-bg);
+  background: rgba(56,200,255,0.12);
   box-shadow: 0 0 12px var(--cyan-glow), inset 0 0 8px rgba(56,200,255,0.07);
 }
 
-/* Optional overlay button style if used later */
-.flow-label-btn {
-  position: absolute;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
-
-  font-family: var(--mono);
-  font-size: 0.6rem;
-  letter-spacing: 0.12em;
-
-  pointer-events: auto;
-  backdrop-filter: blur(6px);
-  background: rgba(6,10,16,0.75);
-}
-
-.flow-label-btn.active {
-  border-color: var(--cyan);
-  color: var(--cyan);
-  box-shadow: 0 0 9px var(--cyan-glow);
-}
-
+#flow-label-2.active {
+  border-color: var(--orange);
+  color: var(--orange);
+  background: rgba(255,179,102,0.12);
+  box-shadow: 0 0 12px var(--orange-glow), inset 0 0 8px rgba(255,179,102,0.07);
+} 
 /* ==========================================================
    CANVAS / SIM AREA
-   Compare layout and stacked rendering canvases
    ========================================================== */
 .compare-wrap {
   display: flex;
@@ -443,11 +538,9 @@ body {
   position: relative;
   flex: 1;
   min-width: 0;
-
   display: grid;
   grid-template-rows: auto;
   align-items: start;
-
   border-radius: var(--radius-lg);
   overflow: hidden;
   border: 1px solid var(--border);
@@ -470,55 +563,66 @@ body {
   position: absolute;
   top: 0;
   left: 0;
-
   width: 100%;
   height: auto;
   aspect-ratio: 256 / 128;
-
   pointer-events: none;
 }
 
-/* Compare labels over each canvas */
-.canvas-wrap[data-label]::before {
+.convergence-canvas {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 14;
+  width: 260px;
+  height: 150px;
+  max-width: 46%;
+  max-height: 36%;
+  border-radius: 10px;
+  pointer-events: none;
+  opacity: 1;
+}
+
+/* .canvas-wrap[data-label]::before {
   content: attr(data-label);
   position: absolute;
   top: 8px;
   left: 10px;
-  z-index: 10;
-
+  z-index: 15;
   font-family: var(--mono);
   font-size: 0.6rem;
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-
   color: var(--cyan);
   background: rgba(6,10,16,0.75);
   border: 1px solid var(--border-hi);
   border-radius: var(--radius-sm);
   padding: 2px 7px;
-
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.2s;
+} */
+
+#canvas-wrap-2[data-label]::before {
+  color: var(--orange);
+  border-color: rgba(255,179,102,0.30);
 }
 
 .compare-wrap.compare-active .canvas-wrap[data-label]::before {
   opacity: 1;
-} 
+}
+
 /* ==========================================================
    TOOLTIP / ERROR
-   Shared lightweight feedback components
    ========================================================== */
 .error {
   margin-left: auto;
   align-self: center;
-
   min-height: 12px;
   line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-word;
-
   font-family: var(--mono);
   font-size: 0.62rem;
   color: var(--danger);
@@ -538,22 +642,18 @@ body {
   position: fixed;
   z-index: 999;
   max-width: 280px;
-
   background: var(--panel);
   border: 1px solid var(--border-hi);
   border-radius: var(--radius);
   padding: 9px 12px;
-
   font-family: var(--mono);
   font-size: 0.65rem;
   color: var(--txt);
   line-height: 1.6;
   letter-spacing: 0.03em;
-
   box-shadow:
     0 8px 32px rgba(0,0,0,0.6),
     0 0 16px rgba(56,200,255,0.08);
-
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.15s;
@@ -561,16 +661,14 @@ body {
 
 .tooltip.visible {
   opacity: 1;
-}
+} 
 
 /* ==========================================================
    FOOTER
-   Supporting explanatory text
    ========================================================== */
 .footer p {
   max-width: 100%;
   margin: 0 auto;
-
   text-align: center;
   font-size: 0.68rem;
   line-height: 1.8;
@@ -584,8 +682,28 @@ body {
 }
 
 /* ==========================================================
+   GLOBAL DISPLAY BUTTONS IN COMPARE MODE
+   ========================================================== */
+.global-compare {
+  border-color: rgba(199,140,255,0.30) !important;
+  color: rgba(199,140,255,0.80);
+}
+
+.global-compare.active {
+  border-color: var(--purple) !important;
+  color: var(--purple) !important;
+  background: rgba(199,140,255,0.13) !important;
+  box-shadow: 0 0 10px var(--purple-glow), inset 0 0 6px rgba(199,140,255,0.05) !important;
+}
+
+.global-compare:hover {
+  border-color: var(--purple) !important;
+  color: var(--purple) !important;
+  background: var(--purple-dim) !important;
+}
+
+/* ==========================================================
    RESPONSIVE
-   Layout adjustments for smaller screens
    ========================================================== */
 @media (max-width: 1100px) {
   .hud {
@@ -611,6 +729,13 @@ body {
 @media (max-width: 900px) {
   .compare-wrap {
     flex-direction: column;
+  }
+
+  .convergence-canvas {
+    width: 240px;
+    height: 140px;
+    max-width: 52%;
+    max-height: 32%;
   }
 }
 
@@ -668,7 +793,13 @@ body {
   .footer p {
     font-size: 0.62rem;
   }
-} 
 
+  .convergence-canvas {
+    width: 210px;
+    height: 126px;
+    max-width: 68%;
+    max-height: 34%;
+  }
+} 
 
 

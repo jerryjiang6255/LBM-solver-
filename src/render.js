@@ -356,7 +356,7 @@ Renderer.prototype.drawVectorField = function (ux, uy, solid, options) {
 
       const alpha = 0.25 + 0.75 * t;
       ctx.strokeStyle = `rgba(255,255,255,${alpha.toFixed(2)})`;
-      ctx.lineWidth = Math.max(0.8, cellW * 0.18);
+      ctx.lineWidth = Math.max(1.5, cellW * 0.25);
 
       ctx.beginPath();
       ctx.moveTo(px, py);
@@ -364,7 +364,7 @@ Renderer.prototype.drawVectorField = function (ux, uy, solid, options) {
       ctx.stroke();
 
       if (len > 3) {
-        const headLen   = Math.min(len * 0.38, cellW * 1.2);
+        const headLen   = Math.min(len * 0.45, cellW * 1.5);
         const headAngle = Math.PI / 6;
         const angle     = Math.atan2(dy, dx);
 
