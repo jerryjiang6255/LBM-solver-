@@ -682,105 +682,7 @@ body {
   background: var(--purple-dim) !important;
 }
 
-/* ==========================================================
-   RESPONSIVE
-   ========================================================== */
-@media (max-width: 1100px) {
-  .hud {
-    flex-wrap: wrap;
-    gap: 10px;
-    justify-content: flex-start;
-  }
 
-  .ctrl-group {
-    flex: 1 1 160px;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 10px;
-    margin-right: 0;
-    padding-right: 0;
-  }
-
-  .ctrl-group:last-of-type {
-    border-bottom: none;
-  }
-}
-
-@media (max-width: 900px) {
-  .compare-wrap {
-    flex-direction: column;
-  }
-
-  .convergence-canvas {
-    width: 240px;
-    height: 140px;
-    max-width: 52%;
-    max-height: 32%;
-  }
-}
-
-@media (max-width: 700px) {
-  body {
-    padding: 10px 10px 20px;
-  }
-
-  .app-header {
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .credit {
-    margin-left: 0;
-  }
-
-  .hud {
-    flex-direction: column;
-    padding: 10px 12px;
-  }
-
-  .ctrl-group {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    flex: unset;
-    width: 100%;
-  }
-
-  .group-label {
-    width: 100%;
-  }
-
-  .btn {
-    font-size: 0.62rem;
-    padding: 4px 8px;
-  }
-
-  #grid-low,
-  #grid-mid,
-  #grid-high {
-    min-width: 48px;
-  }
-
-  .slider-row {
-    min-width: 100%;
-  }
-
-  .stat-value {
-    font-size: 0.8rem;
-  }
-
-  .footer p {
-    font-size: 0.62rem;
-  }
-
-  .convergence-canvas {
-    width: 210px;
-    height: 126px;
-    max-width: 68%;
-    max-height: 34%;
-  }
-} 
 
 /* ==========================================================
    MONITOR MODE BUTTONS
@@ -848,3 +750,94 @@ body {
 }
 
 
+/* ==========================================================
+   TABLET
+   ========================================================== */
+
+@media (max-width: 900px) {
+
+  .compare-wrap{
+    flex-direction:column;
+    gap:14px;
+  }
+
+  .canvas-wrap{
+    width:100%;
+  }
+
+  .hud{
+    flex-direction:column;
+    padding:14px;
+    gap:10px;
+  }
+
+  .ctrl-group{
+    width:100%;
+    border-right:none;
+    border-bottom:1px solid var(--border);
+    padding:14px 0;
+    margin:0;
+  }
+
+  .ctrl-group:last-child{
+    border-bottom:none;
+  }
+
+  .btn-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+
+  .btn-stack{
+    width:100%;
+  }
+
+  .convergence-canvas{
+    width:38%;
+    height:auto;
+    left:12px;
+    top:12px;
+  }
+
+  .monitor-mode-bar{
+    left:12px;
+    top:12px;
+  }
+}
+
+/* ==========================================================
+   PHONE
+   ========================================================== */
+
+@media (max-width: 600px) {
+
+  .app-main {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .compare-wrap {
+    order: -1;
+    margin-bottom: 12px;
+  }
+
+  .flow-target-bar {
+    order: 0;
+  }
+
+  .hud {
+    order: 1;
+  }
+
+  /* Force physics and display button grids to wrap horizontally */
+  .ctrl-group .btn-grid {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  /* Let buttons shrink to fit side by side */
+  .ctrl-group .btn-grid .btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: center;
+  }
+}
