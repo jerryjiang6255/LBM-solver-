@@ -1,20 +1,17 @@
 // src/convergenceMonitor.js
 // ============================================================
-// Lightweight, scalable convergence monitor for per-sim tracking
+// Lightweight, scalable monitor for per-sim tracking
 // with optional popup plotting on an overlay canvas.
 //
-// Current metrics:
-// - meanSpeed     : mean |u| over fluid nodes
-// - rmsDeltaU     : RMS change in velocity since previous sampled frame
-// - meanRhoDev    : mean |rho - 1| over fluid nodes
+// Plot modes:
+// - convergence : meanSpeed, rmsDeltaU, meanRhoDev (normalized)
+// - forces      : Cd, Cl, Cm (absolute, signed)
 //
-// Design goals:
-// - Minimal solver intrusion
-// - Read-only over sim fields
-// - Easy to add/remove metrics later
-// - Internal sampling cadence (default every 3 frames)
-// - Built-in lightweight themed plotting for popup overlay
-// - Normalized plotting for mixed-magnitude metrics
+// Notes:
+// - Histories are stored together so switching modes preserves data
+// - Only convergence metrics are normalized
+// - Force mode uses coefficient histories only
+// - Moment/Cm can be hidden for selected geometry types
 // ============================================================
 
 const DEFAULT_SAMPLE_EVERY_FRAMES = 1;
@@ -48,7 +45,47 @@ const METRICS = {
       return ctx.fluidCount > 0 ? ctx.sumRhoDev / ctx.fluidCount : 0.0;
     },
   },
+
+  cd: {
+    label: "Cd",
+    color: "#62d8ff",
+    compute(sim) {
+      return sim.coeff?.cd ?? 0.0;
+    },
+  },
+
+  cl: {
+    label: "Cl",
+    color: "#ffc27a",
+    compute(sim) {
+      return sim.coeff?.cl ?? 0.0;
+    },
+  },
+
+  cm: {
+    label: "Cm",
+    color: "#d8a2ff",
+    compute(sim) {
+      return sim.coeff?.cm ?? 0.0;
+    },
+  },
 };
+
+const MODE_CONFIG = {
+  convergence: ["meanSpeed", "rmsDeltaU", "meanRhoDev"],
+  forces: ["cd", "cl", "cm"],
+};
+
+// Geometries for which moment / Cm are meaningful enough to show
+function shouldShowMoment(sim) {
+  const type = sim?.params?.bodyType;
+  return (
+    type === "airfoil" ||
+    type === "naca2412" ||
+    type === "cylinder" ||
+    type === "square-cylinder"
+  );
+}
 
 // ---------------------------------------------------------
 // createConvergenceMonitor(sim, options?)
@@ -64,12 +101,6 @@ export function createConvergenceMonitor(sim, options = {}) {
       ? options.maxHistory
       : DEFAULT_MAX_HISTORY;
 
-  const enabledMetrics = options.enabledMetrics || [
-    "meanSpeed",
-    "rmsDeltaU",
-    "meanRhoDev",
-  ];
-
   const state = {
     hasPrevSample: false,
     prevUx: new Float32Array(sim.N),
@@ -79,15 +110,39 @@ export function createConvergenceMonitor(sim, options = {}) {
     canvas: null,
     ctx: null,
     dpr: 1,
+    mode: "convergence",
   };
 
   const history = {
     frame: [],
     step: [],
+
+    meanSpeed: [],
+    rmsDeltaU: [],
+    meanRhoDev: [],
+
+    cd: [],
+    cl: [],
+    cm: [],
   };
 
-  for (let i = 0; i < enabledMetrics.length; i++) {
-    history[enabledMetrics[i]] = [];
+  function activeMetricKeys() {
+    if (state.mode === "forces") {
+      return shouldShowMoment(sim)
+        ? MODE_CONFIG.forces
+        : ["cd", "cl"];
+    }
+    return MODE_CONFIG.convergence;
+  }
+
+  function setMode(mode) {
+    if (mode === "forces" || mode === "convergence") {
+      state.mode = mode;
+    }
+  }
+
+  function getMode() {
+    return state.mode;
   }
 
   function maybeSample() {
@@ -100,22 +155,24 @@ export function createConvergenceMonitor(sim, options = {}) {
     return true;
   }
 
-  function sampleNow() {
+    function sampleNow() {
     const ctx = buildSharedContext(sim, state);
 
     history.frame.push(sim.runtime?.frameCount ?? 0);
     history.step.push(sim.runtime?.stepCount ?? 0);
 
-    for (let i = 0; i < enabledMetrics.length; i++) {
-      const key = enabledMetrics[i];
-      const metric = METRICS[key];
-      if (!metric) continue;
-      history[key].push(metric.compute(sim, ctx, state));
-    }
+    history.meanSpeed.push(METRICS.meanSpeed.compute(sim, ctx, state));
+    history.rmsDeltaU.push(METRICS.rmsDeltaU.compute(sim, ctx, state));
+    history.meanRhoDev.push(METRICS.meanRhoDev.compute(sim, ctx, state));
+
+    // Use directly computed values from context, not sim.coeff
+    history.cd.push(ctx.cd);
+    history.cl.push(ctx.cl);
+    history.cm.push(ctx.cm);
 
     updatePreviousSample(sim, state);
     trimHistory(history, maxHistory);
-  }
+    }
 
   function reset() {
     state.hasPrevSample = false;
@@ -186,15 +243,10 @@ export function createConvergenceMonitor(sim, options = {}) {
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // Title
-    ctx.fillStyle = "#c8d8f0";
-    ctx.font = '500 11px "JetBrains Mono", monospace';
-    ctx.fillText("Convergence", 12, 16);
-
     // Plot region
     const left = 34;
     const right = w - 10;
-    const top = 26;
+    const top = 18;
     const bottom = h - 30;
     const plotW = right - left;
     const plotH = bottom - top;
@@ -223,36 +275,79 @@ export function createConvergenceMonitor(sim, options = {}) {
     ctx.lineTo(right, bottom);
     ctx.stroke();
 
-    // Axis labels
-    // ctx.fillStyle = "#9fb4d3";
-    // ctx.font = '500 9px "JetBrains Mono", monospace';
-    // ctx.fillText("norm", 4, top + 8);
+    const keys = activeMetricKeys();
 
-    // ctx.save();
-    // ctx.translate(w * 0.5, h - 8);
-    // ctx.textAlign = "center";
-    // ctx.fillText("iteration history", 0, 0);
-    // ctx.restore();
+    // -----------------------------------------------------
+    // Vertical scale
+    // convergence -> normalized 0..1
+    // forces      -> signed symmetric scale around zero
+    // -----------------------------------------------------
+    let globalYMax = 1.0;
 
-    // Y tick labels
+    if (state.mode === "forces") {
+      globalYMax = 1e-12;
+      for (let i = 0; i < keys.length; i++) {
+        const arr = history[keys[i]];
+        if (!arr || arr.length === 0) continue;
+        for (let j = 0; j < arr.length; j++) {
+          const a = Math.abs(arr[j]);
+          if (a > globalYMax) globalYMax = a;
+        }
+      }
+      if (globalYMax <= 0) globalYMax = 1.0;
+    }
+
+    // Y-axis labels
     ctx.fillStyle = "rgba(255,255,255,0.45)";
     ctx.font = '500 8px "JetBrains Mono", monospace';
     for (let i = 0; i <= 4; i++) {
-      const y = bottom - (plotH * i) / 4;
-      const label = (i / 4).toFixed(2);
-      ctx.fillText(label, 8, y + 3);
+      const y = top + (plotH * i) / 4;
+      let label;
+      if (state.mode === "convergence") {
+        label = (1.0 - i / 4).toFixed(2);
+      } else {
+        const frac = 1.0 - i / 2.0; // 1, 0.5, 0, -0.5, -1
+        const value = frac * globalYMax;
+
+        if (Math.abs(globalYMax) >= 1) {
+        label = value.toFixed(1);
+        } else if (Math.abs(globalYMax) >= 0.1) {
+        label = value.toFixed(2);
+        } else if (Math.abs(globalYMax) >= 0.01) {
+        label = value.toFixed(3);
+        } else {
+        label = value.toFixed(4);
+        }
+      }
+      ctx.fillText(label, 6, y + 3);
     }
 
-    // Draw normalized lines
-    for (let i = 0; i < enabledMetrics.length; i++) {
-      const key = enabledMetrics[i];
+    // Zero line for force coefficients
+    if (state.mode === "forces") {
+      const yZero = top + 0.5 * plotH;
+      ctx.strokeStyle = "rgba(255,255,255,0.14)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(left, yZero);
+      ctx.lineTo(right, yZero);
+      ctx.stroke();
+    }
+
+    // Draw lines
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
       const metric = METRICS[key];
       const arr = history[key];
       if (!arr || arr.length < 2) continue;
 
       let localMax = 1e-12;
-      for (let j = 0; j < arr.length; j++) {
-        if (arr[j] > localMax) localMax = arr[j];
+
+      if (state.mode === "convergence") {
+        for (let j = 0; j < arr.length; j++) {
+          const a = Math.abs(arr[j]);
+          if (a > localMax) localMax = a;
+        }
+        if (localMax <= 0) localMax = 1.0;
       }
 
       ctx.strokeStyle = metric.color;
@@ -261,8 +356,16 @@ export function createConvergenceMonitor(sim, options = {}) {
 
       for (let j = 0; j < arr.length; j++) {
         const x = left + (plotW * j) / Math.max(arr.length - 1, 1);
-        const yn = localMax > 0 ? arr[j] / localMax : 0;
-        const y = bottom - plotH * yn;
+
+        let y;
+        if (state.mode === "convergence") {
+          const yn = localMax > 0 ? Math.abs(arr[j]) / localMax : 0.0;
+          y = bottom - plotH * yn;
+        } else {
+          const v = globalYMax > 0 ? arr[j] / globalYMax : 0.0;
+          const yn = 0.5 - 0.5 * v; // +1 top, 0 middle, -1 bottom
+          y = top + plotH * yn;
+        }
 
         if (j === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
@@ -272,15 +375,14 @@ export function createConvergenceMonitor(sim, options = {}) {
     }
 
     // Legend
-   let ly = h - 10;
-    const legendWidths = enabledMetrics.map(key => ctx.measureText(METRICS[key].label).width + 28);
+    ctx.font = '500 10px "JetBrains Mono", monospace';
+    let ly = h - 10;
+    const legendWidths = keys.map(key => ctx.measureText(METRICS[key].label).width + 28);
     const totalLegendWidth = legendWidths.reduce((a, b) => a + b, 0);
     let lx = (w - totalLegendWidth) * 0.5;
 
-    ctx.font = '500 10px "JetBrains Mono", monospace';
-
-    for (let i = 0; i < enabledMetrics.length; i++) {
-      const key = enabledMetrics[i];
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
       const metric = METRICS[key];
 
       ctx.fillStyle = metric.color;
@@ -291,13 +393,43 @@ export function createConvergenceMonitor(sim, options = {}) {
 
       lx += ctx.measureText(metric.label).width + 28;
     }
+    // ---- CL/CD scalar readout — top right corner ----
+    if (state.mode === 'forces' && history.cd.length > 0 && history.cl.length > 0) {
+    const lastCd = history.cd[history.cd.length - 1];
+    const lastCl = history.cl[history.cl.length - 1];
+    const lastCm = history.cm.length > 0 ? history.cm[history.cm.length - 1] : null;
+    const ratio  = Math.abs(lastCd) > 1e-6 ? lastCl / lastCd : 0;
+
+    ctx.font = '500 9px "JetBrains Mono", monospace';
+    ctx.textAlign = 'right';
+
+    const lines = [
+        { label: 'Cd', val: lastCd,  color: METRICS.cd.color },
+        { label: 'Cl', val: lastCl,  color: METRICS.cl.color },
+        { label: 'Cl/Cd', val: ratio, color: '#ffffff' },
+    ];
+
+    if (lastCm !== null && shouldShowMoment(sim)) {
+        lines.splice(2, 0, { label: 'Cm', val: lastCm, color: METRICS.cm.color });
+    }
+
+    let ry = top + 10;
+    for (const line of lines) {
+        ctx.fillStyle = line.color;
+        ctx.fillText(`${line.label}: ${line.val.toFixed(4)}`, right - 2, ry);
+        ry += 12;
+    }
+
+    ctx.textAlign = 'left'; // reset
+    }
+
+    
 
     ctx.restore();
   }
 
   return {
     history,
-    enabledMetrics,
     sampleEveryFrames,
     maxHistory,
     maybeSample,
@@ -308,6 +440,9 @@ export function createConvergenceMonitor(sim, options = {}) {
     isVisible,
     resize,
     draw,
+    setMode,
+    getMode,
+    activeMetricKeys,
   };
 }
 
@@ -315,12 +450,38 @@ export function createConvergenceMonitor(sim, options = {}) {
 // buildSharedContext(sim, state)
 // ---------------------------------------------------------
 function buildSharedContext(sim, state) {
-  const { N, ux, uy, rho, solid } = sim;
+  const { N, NX, NY, Q, f, ux, uy, rho, solid, solidList } = sim;
+  const u0  = sim.params?.u0  || 0.1;
+  const rho0 = 1.0;
 
-  let fluidCount = 0;
-  let sumSpeed = 0.0;
-  let sumRhoDev = 0.0;
+  let fluidCount  = 0;
+  let sumSpeed    = 0.0;
+  let sumRhoDev   = 0.0;
   let sumDeltaUSq = 0.0;
+
+  // Force accumulation via momentum exchange on solid surface
+  // Uses the bounce-back momentum transfer: F = sum of (f_i - f_opp) * e_i
+  // for all solid-adjacent fluid nodes
+  let Fx = 0.0;  // drag direction (x)
+  let Fy = 0.0;  // lift direction (y)
+  let Mz = 0.0;  // moment about body centroid
+
+  // Find centroid of solid for moment arm
+  let scx = 0, scy = 0, sc = 0;
+  if (solidList) {
+    for (let k = 0; k < solidList.length; k++) {
+      const n = solidList[k];
+      scx += n % NX;
+      scy += (n / NX) | 0;
+      sc++;
+    }
+    if (sc > 0) { scx /= sc; scy /= sc; }
+  }
+
+  // D2Q9 opposite directions — same as lbm.js OPP
+  const OPP = [0, 3, 4, 1, 2, 7, 8, 5, 6];
+  const CX_  = [0, 1, 0,-1, 0, 1,-1,-1, 1];
+  const CY_  = [0, 0, 1, 0,-1, 1, 1,-1,-1];
 
   for (let n = 0; n < N; n++) {
     if (solid[n]) continue;
@@ -328,25 +489,59 @@ function buildSharedContext(sim, state) {
     const u = ux[n];
     const v = uy[n];
     const r = rho[n];
-
-    const spd = Math.sqrt(u * u + v * v);
+    const spd = Math.sqrt(u*u + v*v);
 
     fluidCount++;
-    sumSpeed += spd;
+    sumSpeed  += spd;
     sumRhoDev += Math.abs(r - 1.0);
 
     if (state.hasPrevSample) {
       const du = u - state.prevUx[n];
       const dv = v - state.prevUy[n];
-      sumDeltaUSq += du * du + dv * dv;
+      sumDeltaUSq += du*du + dv*dv;
+    }
+
+    // Check if any neighbor is solid — momentum exchange node
+    const x = n % NX;
+    const y = (n / NX) | 0;
+    const base = n * Q;
+
+    for (let i = 1; i < Q; i++) {
+      const nx_ = x + CX_[i];
+      const ny_ = y + CY_[i];
+      if (nx_ < 0 || nx_ >= NX || ny_ < 0 || ny_ >= NY) continue;
+      const nb = ny_ * NX + nx_;
+      if (!solid[nb]) continue;
+
+      // Momentum exchange: bounce-back force contribution
+      const fi   = f[base + i];
+      const fopp = f[base + OPP[i]];
+      const dfx  = (fi + fopp) * CX_[i];
+      const dfy  = (fi + fopp) * CY_[i];
+
+      Fx += dfx;
+      Fy += dfy;
+      // Moment arm from centroid
+      Mz += (x - scx) * dfy - (y - scy) * dfx;
     }
   }
+
+  // Non-dimensionalize: C = F / (0.5 * rho0 * u0^2 * L)
+  // L = characteristic length from sim
+  const L    = sim.L || 1.0;
+  const qRef = 0.5 * rho0 * u0 * u0 * L;
+  const cd   = qRef > 0 ? Fx / qRef : 0;
+  const cl   = qRef > 0 ? Fy / qRef : 0;
+  const cm   = qRef > 0 ? Mz / (qRef * L) : 0;
 
   return {
     fluidCount,
     sumSpeed,
     sumRhoDev,
     sumDeltaUSq,
+    cd,
+    cl,
+    cm,
   };
 }
 

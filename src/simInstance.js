@@ -14,6 +14,8 @@
 // - For global fidelity presets, NX/NY are now passed in at creation time
 // - Version 6: physics config added per sim for solver toggles
 // - Change 1: pulsing inlet flow state added per sim
+// - Added: per-sim force / moment storage for Ladd momentum exchange
+// - Added: per-sim coefficient storage and scaling references
 // ============================================================
 
 import { Q, RHO0, U0, CX, CY, W } from "./lbm.js";
@@ -77,6 +79,20 @@ export function initField(sim, u0 = sim.params.u0, solid = sim.solid) {
     for (let i = 0; i < sim.Q; i++) {
       sim.f[base + i] = feqAt(i, r, u, v);
     }
+  }
+
+  // Reset force outputs on initialization
+  if (sim.force) {
+    sim.force.fx = 0.0;
+    sim.force.fy = 0.0;
+    sim.force.mz = 0.0;
+  }
+
+  // Reset coefficient outputs on initialization
+  if (sim.coeff) {
+    sim.coeff.cd = 0.0;
+    sim.coeff.cl = 0.0;
+    sim.coeff.cm = 0.0;
   }
 }
 
@@ -276,6 +292,46 @@ export function createSimInstance(options = {}) {
     },
 
     // -----------------------------------------------------
+    // Force / moment storage
+    // Standard Ladd-style momentum exchange output:
+    // - fx: drag-like force (streamwise)
+    // - fy: lift-like force (cross-stream)
+    // - mz: moment about forceRef
+    //
+    // forceRef is the chosen reference point for moment:
+    // - cylinder: usually center
+    // - airfoil: usually quarter-chord or center
+    // -----------------------------------------------------
+    force: {
+      fx: 0.0,
+      fy: 0.0,
+      mz: 0.0,
+    },
+
+    forceRef: {
+      x: 0.0,
+      y: 0.0,
+    },
+
+    // -----------------------------------------------------
+    // Coefficient storage
+    // - cd: drag coefficient
+    // - cl: lift coefficient
+    // - cm: moment coefficient
+    //
+    // forceScale and momentScale are set elsewhere
+    // (typically when geometry/reference quantities are applied).
+    // -----------------------------------------------------
+    coeff: {
+      cd: 0.0,
+      cl: 0.0,
+      cm: 0.0,
+    },
+
+    forceScale: 1.0,
+    momentScale: 1.0,
+
+    // -----------------------------------------------------
     // Rendering-related handles
     // -----------------------------------------------------
     renderer: null,
@@ -287,6 +343,5 @@ export function createSimInstance(options = {}) {
   recomputeBaseViscosity(sim);
   return sim;
 }
-
 
 

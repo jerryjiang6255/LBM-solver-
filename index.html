@@ -22,8 +22,9 @@
     <header class="app-header">
       <h1>
         Lattice Boltzmann Sandbox
-        <span class="tag tooltip-trigger" data-tip="V7 features: TRT/BGK collision selection, Smagorinsky/WALE LES selection, wall-model toggle, pulsing inlet forcing, extra geometry presets, BFL interpolated boundary, convergence plotting, global fidelity presets, and live sandbox drawing.">V7</span>
-      </h1>
+        <span class="tag tooltip-trigger" data-tip="V7 features: TRT/BGK collision selection, Smagorinsky/WALE LES selection, wall-model toggle, pulsing inlet forcing, extra geometry presets, BFL interpolated boundary, monitor plotting, global fidelity presets, live sandbox drawing, live convergence and forces monitor plots.">V7</span>
+      </h1> 
+
 
       <span class="subtitle">
         <span class="tooltip-trigger" data-tip="D2Q9: 2-dimensional, 9-velocity lattice.">D2Q9</span>
@@ -38,7 +39,7 @@
         <span class="subtitle-sep"> · </span>
         <span class="tooltip-trigger" data-tip="BFL interpolated boundary condition using sub-grid wall location from the SDF.">BFL boundary</span>
         <span class="subtitle-sep"> · </span>
-        <span class="tooltip-trigger" data-tip="Wall model: near-wall turbulence closure.">Wall model</span>
+        <span class="tooltip-trigger" data-tip="Wall model: near-wall log-law turbulence closure.">Wall model</span>
       </span>
 
       <a class="credit" href="https://www.linkedin.com/in/jerry-jiang-a38127285/" target="_blank" rel="noopener noreferrer">
@@ -49,6 +50,9 @@
     <div class="tooltip" id="tooltip" role="tooltip"></div>
 
     <main class="app-main">
+      <!-- ================================================= -->
+      <!-- Control Panel                                     -->
+      <!-- ================================================= -->
       <div class="hud">
         <!-- Session -->
         <div class="ctrl-group">
@@ -56,10 +60,12 @@
           <div class="btn-stack">
             <button class="btn" id="sandbox-btn">Sandbox</button>
             <button class="btn" id="compare-btn">Compare</button>
-            <button class="btn" id="convergence-btn">Convergence</button>
+            <button class="btn" id="convergence-btn">Monitor</button>
           </div>
         </div> 
-       <!-- Body -->
+
+
+        <!-- Body -->
         <div class="ctrl-group">
           <div class="group-label">Body</div>
           <div class="btn-grid">
@@ -132,7 +138,8 @@
             </label>
             <input type="range" id="pulse-freq-slider" class="control-slider" min="0.001" max="0.050" step="0.001" value="0.010" />
           </div>
-        </div> 
+        </div>
+
        <!-- Physics -->
         <div class="ctrl-group">
           <div class="group-label">Physics</div>
@@ -168,7 +175,7 @@
           </div>
 
           <div class="btn-grid">
-            <button class="btn activate" id="mode-speed">Speed</button>
+            <button class="btn" id="mode-speed">Speed</button>
             <button class="btn" id="mode-qcrit">Q-Criterion</button>
           </div>
 
@@ -209,44 +216,82 @@
               <output class="stat-value" id="frame-value">0 / 0</output>
             </div>
           </div>
-        </div> 
-       <!-- Fidelity -->
+        </div>
+
+        <!-- Fidelity -->
         <div class="ctrl-group">
           <div class="group-label">Fidelity</div>
 
-          <div style="display:flex; align-items:center; gap:10px;">
+          <div style="display:flex; align-items:center; gap:12px;">
+
             <div class="btn-stack">
               <button class="btn" id="grid-high">High</button>
-              <button class="btn activate" id="grid-mid">Mid</button>
+              <button class="btn active" id="grid-mid">Mid</button>
               <button class="btn" id="grid-low">Low</button>
             </div>
 
-            <!-- <div style="display:flex; flex-direction:column; gap:3px;">
-              <div class="stat">
-                <span class="stat-label">Grid</span>
-                <output class="stat-value" id="grid-value" style="font-size:0.75rem">256×128</output>
+            <div style="display:flex; flex-direction:column; align-items:flex-start; gap:6px;">
+
+              <!-- Grid -->
+              <div style="display:flex; flex-direction:column; align-items:flex-start;">
+                <span class="stat-label">GRID</span>
+
+                <div style="
+                  display:flex;
+                  flex-direction:column;
+                  align-items:center;
+                  line-height:1;
+                  margin-top:2px;
+                ">
+                  <output class="stat-value" id="grid-nx"
+                    style="font-size:0.85rem;">256</output>
+
+                  <span class="stat-value"
+                    style="
+                      font-size:0.75rem;
+                      line-height:1;
+                      margin:1px 0;
+                    ">×</span>
+
+                  <output class="stat-value" id="grid-ny"
+                    style="font-size:0.85rem;">128</output>
+                </div>
               </div>
-              <div class="stat">
-                <span class="stat-label">Nodes</span>
-                <output class="stat-value" id="nodes-value" style="font-size:0.75rem">32,768</output>
+
+              <!-- Nodes -->
+              <div style="display:flex; flex-direction:column; align-items:flex-start;">
+                <span class="stat-label">NODES</span>
+                <output class="stat-value" id="nodes-value"
+                  style="font-size:0.66rem;">32,768</output>
               </div>
-            </div> -->
+
+            </div>
+
           </div>
         </div>
 
         <p class="error" id="app-error" role="alert"></p>
-      </div>
+      </div> 
 
+
+      <!-- Compare Target Bar -->
       <div class="flow-target-bar" id="flow-target-bar" style="display:none">
         <button class="btn active" id="flow-label-1">Flow 1</button>
         <button class="btn active" id="flow-label-2">Flow 2</button>
       </div>
 
+      <!-- Canvas Area -->
       <div class="compare-wrap">
         <div class="canvas-wrap" id="canvas-wrap-1" data-label="Flow 1">
           <canvas id="flow-canvas-1"></canvas>
           <canvas id="body-canvas-1"></canvas>
           <canvas id="wall-canvas-1"></canvas>
+
+          <div class="monitor-mode-bar" id="monitor-mode-bar-1" style="display:none">
+            <button class="btn monitor-mode-btn active" id="monitor-conv-btn-1">Convergence</button>
+            <button class="btn monitor-mode-btn" id="monitor-force-btn-1">Forces</button>
+          </div>
+
           <canvas id="conv-canvas-1" class="convergence-canvas"></canvas>
         </div>
 
@@ -254,6 +299,12 @@
           <canvas id="flow-canvas-2"></canvas>
           <canvas id="body-canvas-2"></canvas>
           <canvas id="wall-canvas-2"></canvas>
+
+          <div class="monitor-mode-bar" id="monitor-mode-bar-2" style="display:none">
+            <button class="btn monitor-mode-btn active" id="monitor-conv-btn-2">Convergence</button>
+            <button class="btn monitor-mode-btn" id="monitor-force-btn-2">Forces</button>
+          </div>
+
           <canvas id="conv-canvas-2" class="convergence-canvas"></canvas>
         </div>
       </div>
@@ -270,12 +321,14 @@
         remeshing — as demonstrated by the sandbox drawing feature, where arbitrary walls can be
         placed in real time and the flow adapts instantly without any restart or remesh. The solver
         here uses a D2Q9 lattice with selectable collision / LES physics, pulsing inlet forcing,
-        BFL interpolated boundary conditions, convergence plotting, and SDF-based geometry. Any
+        BFL interpolated boundary conditions, monitor plotting, and SDF-based geometry. Any
         feedback or advice is greatly appreciated.
       </p>
     </footer>
-  </div> 
- <script>
+  </div>
+
+  <!-- Error handling -->
+  <script>
     const errEl = () => document.getElementById("app-error");
 
     window.addEventListener("error", e => {
@@ -288,8 +341,9 @@
       errEl().textContent =
         "Unhandled rejection: " + (e.reason?.message || e.reason);
     });
-  </script>
+  </script> 
 
+ <!-- Main app -->
   <script type="module">
     import { Q, W } from "./src/lbm.js";
     import {
@@ -321,6 +375,9 @@
       buildTandemCylinders
     } from "./src/geometry.js";
 
+    // =====================================================
+    // Constants / global state
+    // =====================================================
     const GRID_PRESETS = {
       low:  { NX: 160, NY: 80 },
       mid:  { NX: 256, NY: 128 },
@@ -343,12 +400,22 @@
     let convergenceVisible = false;
     let lastTargetedFlow = 1;
 
+    // =====================================================
+    // Cached DOM refs
+    // =====================================================
     const compareBtn = document.getElementById("compare-btn");
     const convergenceBtn = document.getElementById("convergence-btn");
     const canvasWrap2 = document.getElementById("canvas-wrap-2");
     const flowTargetBar = document.getElementById("flow-target-bar");
     const target1Btn = document.getElementById("flow-label-1");
     const target2Btn = document.getElementById("flow-label-2");
+
+    const monitorBar1 = document.getElementById("monitor-mode-bar-1");
+    const monitorBar2 = document.getElementById("monitor-mode-bar-2");
+    const monitorConvBtn1 = document.getElementById("monitor-conv-btn-1");
+    const monitorForceBtn1 = document.getElementById("monitor-force-btn-1");
+    const monitorConvBtn2 = document.getElementById("monitor-conv-btn-2");
+    const monitorForceBtn2 = document.getElementById("monitor-force-btn-2");
 
     const aoaRow = document.getElementById("aoa-row");
     const nozzleRow = document.getElementById("nozzle-row");
@@ -371,9 +438,13 @@
     const pauseBtn = document.getElementById("pause-btn");
     const tooltip = document.getElementById("tooltip");
 
+    // =====================================================
+    // UI groups / mappings
+    // =====================================================
     const gridGroup = ["grid-low", "grid-mid", "grid-high"];
-    const modeGroup = ["mode-speed", "mode-qcrit"]; 
-   const bodyGroup = [
+    const modeGroup = ["mode-speed", "mode-qcrit"];
+
+    const bodyGroup = [
       "body-airfoil",
       "body-naca2412",
       "body-cylinder",
@@ -382,9 +453,8 @@
       "body-nozzle",
       "body-blocks",
       "body-empty"
-    ];
-
-    const collisionGroup = ["collision-trt", "collision-bgk"];
+    ]; 
+   const collisionGroup = ["collision-trt", "collision-bgk"];
     const lesGroup = ["les-smag", "les-wale"];
     const wallGroup = ["wall-on", "wall-off"];
     const pulseGroup = ["pulse-on", "pulse-off"];
@@ -467,8 +537,12 @@
       "dist-btn",
       "mode-speed",
       "mode-qcrit"
-    ]; 
-   function getPhysicsFromUI() {
+    ];
+
+   // =====================================================
+    // UI state helpers
+    // =====================================================
+    function getPhysicsFromUI() {
       return {
         collisionModel: document.getElementById("collision-bgk").classList.contains("active")
           ? "bgk"
@@ -493,13 +567,11 @@
     }
 
     function updateGridStats() {
-      // const { low, mid, high } = GRID_PRESETS;
-
-      // document.getElementById("grid-low").textContent = `Low ${low.NX}×${low.NY}`;
-      // document.getElementById("grid-mid").textContent = `Mid ${mid.NX}×${mid.NY}`;
-      // document.getElementById("grid-high").textContent = `High ${high.NX}×${high.NY}`;
+      const { NX, NY } = currentDims();
+      document.getElementById("grid-nx").textContent = NX;
+      document.getElementById("grid-ny").textContent = NY;
+      document.getElementById("nodes-value").textContent = (NX * NY).toLocaleString();
     }
-
 
     function dropFidelity(currentKey) {
       if (currentKey === "high") return "mid";
@@ -558,8 +630,9 @@
         "slider-both-same",
         "slider-both-diff"
       );
-    } 
-   function groupValuesEqual(v1, v2) {
+    }
+
+    function groupValuesEqual(v1, v2) {
       return v1 === v2;
     }
 
@@ -596,6 +669,8 @@
         }
       });
     }
+
+
 
     function renderAllCompareGroups() {
       renderCompareGroup(COMPARE_GROUP_CONFIG.body);
@@ -661,8 +736,9 @@
         default:
           return null;
       }
-    } 
-   function renderSingleSlider(id) {
+    }
+
+    function renderSingleSlider(id) {
       const slider = document.getElementById(id);
       if (!slider) return;
 
@@ -723,7 +799,9 @@
       }
 
       slider.disabled = false;
-    }
+    } 
+
+
 
     function renderAllSliders() {
       TARGET_CONTROL_SLIDERS.forEach(renderSingleSlider);
@@ -762,6 +840,47 @@
       if (refSim) updateBodyRows(refSim.params.bodyType);
     }
 
+    // =====================================================
+    // Monitor mode helpers
+    // =====================================================
+    function currentMonitorMode() {
+      if (sim1?.convergence) return sim1.convergence.getMode();
+      return "convergence";
+    }
+
+    function setMonitorMode(mode) {
+      if (sim1?.convergence) sim1.convergence.setMode(mode);
+      if (sim2?.convergence) sim2.convergence.setMode(mode);
+      updateMonitorModeButtons();
+    }
+
+    function updateMonitorModeButtons() {
+      const mode = currentMonitorMode();
+
+      [monitorConvBtn1, monitorConvBtn2].forEach(btn => {
+        if (!btn) return;
+        btn.classList.toggle("active", mode === "convergence");
+      });
+
+      [monitorForceBtn1, monitorForceBtn2].forEach(btn => {
+        if (!btn) return;
+        btn.classList.toggle("active", mode === "forces");
+      });
+    }
+
+    function updateMonitorBars() {
+      const show1 = convergenceVisible && !!sim1;
+      const show2 = convergenceVisible && compareMode && !!sim2;
+
+      if (monitorBar1) monitorBar1.style.display = show1 ? "" : "none";
+      if (monitorBar2) monitorBar2.style.display = show2 ? "" : "none";
+
+      updateMonitorModeButtons();
+    }
+
+    // =====================================================
+    // Sim setup / recreation
+    // =====================================================
     function cloneCanvasById(id) {
       const oldCanvas = document.getElementById(id);
       const newCanvas = oldCanvas.cloneNode(false);
@@ -803,113 +922,119 @@
         sim.convergence = createConvergenceMonitor(sim);
         sim.convergence.attachCanvas(sim.convCanvas);
         sim.convergence.setVisible(convergenceVisible);
+        sim.convergence.setMode("convergence");
+
+        updateMonitorBars();
 
         bindCanvasInput(sim);
         resetSim(sim);
       });
+    }
+
+   function createSim(id, bodyType, aoaDeg, overrides = {}) {
+      const { NX, NY } = currentDims();
+
+      const physicsUI = getPhysicsFromUI();
+      const flowUI = getFlowFromUI();
+
+      return createSimInstance({
+        id,
+        NX,
+        NY,
+        bodyType,
+        aoaDeg,
+        nozzleDiameter: overrides.nozzleDiameter ?? parseInt(nozzleSlider.value, 10),
+        u0: overrides.u0 ?? parseFloat(document.getElementById("u0-slider").value),
+        reynolds: overrides.reynolds ?? parseFloat(document.getElementById("re-slider").value),
+        displayMode: document.getElementById("mode-qcrit").classList.contains("active") ? "qcrit" : "speed",
+        colorScale: parseFloat(document.getElementById("scale-slider").value),
+        showVectors: document.getElementById("vector-btn").classList.contains("active"),
+        showGrid: document.getElementById("dist-btn").classList.contains("active"),
+        gridFine: document.getElementById("dist-btn").classList.contains("active"),
+        showDist: document.getElementById("dist-btn").classList.contains("active"),
+        stepsPerFrame: parseInt(document.getElementById("steps-slider").value, 10),
+        running: document.getElementById("pause-btn").textContent !== "Resume",
+        nozzleCy: Math.floor(NY / 2),
+        uCoflow: U_COFLOW,
+
+        collisionModel: overrides.collisionModel ?? physicsUI.collisionModel,
+        lesModel: overrides.lesModel ?? physicsUI.lesModel,
+        wallModel: overrides.wallModel ?? physicsUI.wallModel,
+
+        pulsationOn: overrides.pulsationOn ?? flowUI.pulsationOn,
+        pulsationAmp: overrides.pulsationAmp ?? flowUI.pulsationAmp,
+        pulsationFreq: overrides.pulsationFreq ?? flowUI.pulsationFreq,
+      });
+    }
+
+    function recreateSims() {
+      const prevSim1 = sim1;
+      const prevSim2 = sim2;
+
+      sim1 = createSim(
+        "sim1",
+        prevSim1 ? prevSim1.params.bodyType : "airfoil",
+        prevSim1 ? prevSim1.params.aoaDeg : 10,
+        prevSim1 ? {
+          nozzleDiameter: prevSim1.params.nozzleDiameter,
+          u0: prevSim1.params.u0,
+          reynolds: prevSim1.params.reynolds,
+          collisionModel: prevSim1.physics.collisionModel,
+          lesModel: prevSim1.physics.lesModel,
+          wallModel: prevSim1.physics.wallModel,
+          pulsationOn: prevSim1.flow.pulsationOn,
+          pulsationAmp: prevSim1.flow.pulsationAmp,
+          pulsationFreq: prevSim1.flow.pulsationFreq,
+        } : {}
+      );
+
+      sim1.params.tandemSpacing =
+        typeof prevSim1?.params?.tandemSpacing === "number"
+          ? prevSim1.params.tandemSpacing
+          : parseInt(tandemSlider.value, 10);
+
+      setupSim(sim1, "flow-canvas-1", "body-canvas-1", "wall-canvas-1", "conv-canvas-1");
+
+      if (compareMode) {
+        sim2 = createSim(
+          "sim2",
+          prevSim2 ? prevSim2.params.bodyType : "naca2412",
+          prevSim2 ? prevSim2.params.aoaDeg : 10,
+          prevSim2 ? {
+            nozzleDiameter: prevSim2.params.nozzleDiameter,
+            u0: prevSim2.params.u0,
+            reynolds: prevSim2.params.reynolds,
+            collisionModel: prevSim2.physics.collisionModel,
+            lesModel: prevSim2.physics.lesModel,
+            wallModel: prevSim2.physics.wallModel,
+            pulsationOn: prevSim2.flow.pulsationOn,
+            pulsationAmp: prevSim2.flow.pulsationAmp,
+            pulsationFreq: prevSim2.flow.pulsationFreq,
+          } : {}
+        );
+
+        sim2.params.tandemSpacing =
+          typeof prevSim2?.params?.tandemSpacing === "number"
+            ? prevSim2.params.tandemSpacing
+            : parseInt(tandemSlider.value, 10);
+
+        setupSim(sim2, "flow-canvas-2", "body-canvas-2", "wall-canvas-2", "conv-canvas-2");
+      } else {
+        sim2 = null;
+      }
+
+      updateGridStats();
+      requestAnimationFrame(() => {
+        resizeOverlayCanvases();
+        syncTargetUI();
+        updateMonitorBars();
+      });
     } 
-function createSim(id, bodyType, aoaDeg, overrides = {}) {
-  const { NX, NY } = currentDims();
 
-  const physicsUI = getPhysicsFromUI();
-  const flowUI = getFlowFromUI();
-
-  return createSimInstance({
-    id,
-    NX,
-    NY,
-    bodyType,
-    aoaDeg,
-    nozzleDiameter: overrides.nozzleDiameter ?? parseInt(nozzleSlider.value, 10),
-    u0: overrides.u0 ?? parseFloat(document.getElementById("u0-slider").value),
-    reynolds: overrides.reynolds ?? parseFloat(document.getElementById("re-slider").value),
-    displayMode: document.getElementById("mode-qcrit").classList.contains("active") ? "qcrit" : "speed",
-    colorScale: parseFloat(document.getElementById("scale-slider").value),
-    showVectors: document.getElementById("vector-btn").classList.contains("active"),
-    showGrid: document.getElementById("dist-btn").classList.contains("active"),
-    gridFine: document.getElementById("dist-btn").classList.contains("active"),
-    showDist: document.getElementById("dist-btn").classList.contains("active"),
-    stepsPerFrame: parseInt(document.getElementById("steps-slider").value, 10),
-    running: document.getElementById("pause-btn").textContent !== "Resume",
-    nozzleCy: Math.floor(NY / 2),
-    uCoflow: U_COFLOW,
-
-    collisionModel: overrides.collisionModel ?? physicsUI.collisionModel,
-    lesModel: overrides.lesModel ?? physicsUI.lesModel,
-    wallModel: overrides.wallModel ?? physicsUI.wallModel,
-
-    pulsationOn: overrides.pulsationOn ?? flowUI.pulsationOn,
-    pulsationAmp: overrides.pulsationAmp ?? flowUI.pulsationAmp,
-    pulsationFreq: overrides.pulsationFreq ?? flowUI.pulsationFreq,
-  });
-}
-
-
-function recreateSims() {
-  const prevSim1 = sim1;
-  const prevSim2 = sim2;
-
-  sim1 = createSim(
-    "sim1",
-    prevSim1 ? prevSim1.params.bodyType : "airfoil",
-    prevSim1 ? prevSim1.params.aoaDeg : 10,
-    prevSim1 ? {
-      nozzleDiameter: prevSim1.params.nozzleDiameter,
-      u0: prevSim1.params.u0,
-      reynolds: prevSim1.params.reynolds,
-      collisionModel: prevSim1.physics.collisionModel,
-      lesModel: prevSim1.physics.lesModel,
-      wallModel: prevSim1.physics.wallModel,
-      pulsationOn: prevSim1.flow.pulsationOn,
-      pulsationAmp: prevSim1.flow.pulsationAmp,
-      pulsationFreq: prevSim1.flow.pulsationFreq,
-    } : {}
-  );
-
-  sim1.params.tandemSpacing =
-    typeof prevSim1?.params?.tandemSpacing === "number"
-      ? prevSim1.params.tandemSpacing
-      : parseInt(tandemSlider.value, 10);
-
-  setupSim(sim1, "flow-canvas-1", "body-canvas-1", "wall-canvas-1", "conv-canvas-1");
-
-  if (compareMode) {
-    sim2 = createSim(
-      "sim2",
-      prevSim2 ? prevSim2.params.bodyType : "naca2412",
-      prevSim2 ? prevSim2.params.aoaDeg : 10,
-      prevSim2 ? {
-        nozzleDiameter: prevSim2.params.nozzleDiameter,
-        u0: prevSim2.params.u0,
-        reynolds: prevSim2.params.reynolds,
-        collisionModel: prevSim2.physics.collisionModel,
-        lesModel: prevSim2.physics.lesModel,
-        wallModel: prevSim2.physics.wallModel,
-        pulsationOn: prevSim2.flow.pulsationOn,
-        pulsationAmp: prevSim2.flow.pulsationAmp,
-        pulsationFreq: prevSim2.flow.pulsationFreq,
-      } : {}
-    );
-
-    sim2.params.tandemSpacing =
-      typeof prevSim2?.params?.tandemSpacing === "number"
-        ? prevSim2.params.tandemSpacing
-        : parseInt(tandemSlider.value, 10);
-
-    setupSim(sim2, "flow-canvas-2", "body-canvas-2", "wall-canvas-2", "conv-canvas-2");
-  } else {
-    sim2 = null;
-  }
-
-  updateGridStats();
-  requestAnimationFrame(() => {
-    resizeOverlayCanvases();
-    syncTargetUI();
-  });
-}
-
-
-   function resolveGeometry(sim) {
+   // =====================================================
+    // Geometry
+    // =====================================================
+    function resolveGeometry(sim) {
       const dims = { NX: sim.NX, NY: sim.NY };
       const bodyType = sim.params.bodyType;
       const aoaDeg = sim.params.aoaDeg;
@@ -1019,8 +1144,9 @@ function recreateSims() {
         },
         charLength: result.charLength
       };
-    } 
-   function applyGeometry(sim, { g, p, charLength }) {
+    }
+
+    function applyGeometry(sim, { g, p, charLength }) {
       setCharacteristicLength(sim, charLength);
 
       sim.solidBase = g.solid;
@@ -1030,7 +1156,66 @@ function recreateSims() {
       sim.linkMask = g.linkMask;
       sim.linkQ = g.linkQ;
       sim.solidList = g.solidList;
-      sim.fluidSurfaceList = g.fluidSurfaceList;
+      sim.fluidSurfaceList = g.fluidSurfaceList; 
+
+     // ---------------------------------------------------
+      // Force reference / coefficient scaling
+      // ---------------------------------------------------
+      const rhoRef = sim.RHO0 ?? 1.0;
+      const uRef = sim.params.u0 ?? 1.0;
+      const qDyn = 0.5 * rhoRef * uRef * uRef;
+
+      if (p.type === "airfoil" || p.type === "naca2412") {
+        sim.forceRef.x = p.cx - p.chord / 4;
+        sim.forceRef.y = p.cy;
+
+        sim.forceScale = qDyn * p.chord;
+        sim.momentScale = qDyn * p.chord * p.chord;
+
+      } else if (p.type === "cylinder") {
+        const d = 2 * p.radius;
+        sim.forceRef.x = p.cx;
+        sim.forceRef.y = p.cy;
+
+        sim.forceScale = qDyn * d;
+        sim.momentScale = qDyn * d * d;
+
+      } else if (p.type === "square-cylinder") {
+        sim.forceRef.x = p.cx;
+        sim.forceRef.y = p.cy;
+
+        sim.forceScale = qDyn * p.size;
+        sim.momentScale = qDyn * p.size * p.size;
+
+      } else if (p.type === "tandem-cylinders") {
+        const d = 2 * p.radius;
+        sim.forceRef.x = 0.5 * (p.cx1 + p.cx2);
+        sim.forceRef.y = p.cy;
+
+        sim.forceScale = qDyn * d;
+        sim.momentScale = qDyn * d * d;
+
+      } else if (p.type === "nozzle") {
+        sim.forceRef.x = p.length * 0.5;
+        sim.forceRef.y = p.cy;
+
+        sim.forceScale = qDyn * p.diameter;
+        sim.momentScale = qDyn * p.diameter * p.diameter;
+
+      } else if (p.type === "blocks") {
+        sim.forceRef.x = sim.NX * 0.5;
+        sim.forceRef.y = sim.NY * 0.5;
+
+        sim.forceScale = qDyn * (charLength || sim.L || 1.0);
+        sim.momentScale = qDyn * Math.pow(charLength || sim.L || 1.0, 2);
+
+      } else {
+        sim.forceRef.x = 0.0;
+        sim.forceRef.y = 0.0;
+
+        sim.forceScale = qDyn * Math.max(charLength || sim.L || 1.0, 1.0);
+        sim.momentScale = qDyn * Math.pow(Math.max(charLength || sim.L || 1.0, 1.0), 2);
+      }
 
       if (sim.bodyRenderer) {
         sim.bodyRenderer.clear();
@@ -1074,8 +1259,11 @@ function recreateSims() {
       if (sim.convergence) sim.convergence.reset();
       const inletU = getInletVelocity(sim);
       applyBoundaryConditions(sim, inletU);
-    }
+    } 
 
+   // =====================================================
+    // Canvas input
+    // =====================================================
     function canvasToLattice(canvas, clientX, clientY, sim) {
       const rect = canvas.getBoundingClientRect();
       return {
@@ -1140,9 +1328,12 @@ function recreateSims() {
         draw.endStroke(sandboxMode);
         draw.redrawWalls();
       });
-    }
+    } 
 
-   function stepOnce(sim) {
+   // =====================================================
+    // Solver loop
+    // =====================================================
+    function stepOnce(sim) {
       if (!sim || !sim.solid || !sim.userDraw) return;
       const inletU = getInletVelocity(sim);
       collideFused(sim, inletU);
@@ -1192,7 +1383,7 @@ function recreateSims() {
           sim.paintedNodes
         );
 
-        if (sim.convergence) {
+        if (sim.convergence && convergenceVisible) {
           sim.convergence.maybeSample();
           sim.convergence.draw();
         }
@@ -1205,6 +1396,9 @@ function recreateSims() {
       requestAnimationFrame(tick);
     }
 
+    // =====================================================
+    // Compare target controls
+    // =====================================================
     target1Btn.addEventListener("click", () => {
       if (target1Active && !target2Active) return;
       target1Active = !target1Active;
@@ -1220,7 +1414,11 @@ function recreateSims() {
       if (target1Active && target2Active) lastTargetedFlow = 2;
       syncTargetUI();
     }); 
-   compareBtn.addEventListener("click", () => {
+
+   // =====================================================
+    // Compare toggle
+    // =====================================================
+    compareBtn.addEventListener("click", () => {
       compareMode = !compareMode;
       compareBtn.classList.toggle("active", compareMode);
       document.querySelector(".compare-wrap").classList.toggle("compare-active", compareMode);
@@ -1274,9 +1472,13 @@ function recreateSims() {
       requestAnimationFrame(() => {
         resizeOverlayCanvases();
         syncTargetUI();
+        updateMonitorBars();
       });
-    });
+    }); 
 
+   // =====================================================
+    // Monitor button + mode buttons
+    // =====================================================
     convergenceBtn.addEventListener("click", () => {
       convergenceVisible = !convergenceVisible;
       convergenceBtn.classList.toggle("active", convergenceVisible);
@@ -1287,9 +1489,18 @@ function recreateSims() {
       if (sim1?.convergence) sim1.convergence.setVisible(convergenceVisible);
       if (sim2?.convergence) sim2.convergence.setVisible(convergenceVisible);
 
+      updateMonitorBars();
       requestAnimationFrame(resizeOverlayCanvases);
     });
 
+    monitorConvBtn1?.addEventListener("click", () => setMonitorMode("convergence"));
+    monitorConvBtn2?.addEventListener("click", () => setMonitorMode("convergence"));
+    monitorForceBtn1?.addEventListener("click", () => setMonitorMode("forces"));
+    monitorForceBtn2?.addEventListener("click", () => setMonitorMode("forces"));
+
+    // =====================================================
+    // Body controls
+    // =====================================================
     function switchBody(type) {
       targetedSims().forEach(sim => {
         sim.params.bodyType = type;
@@ -1323,8 +1534,9 @@ function recreateSims() {
       });
 
       syncTargetUI();
-    }); 
-   nozzleSlider.addEventListener("input", () => {
+    });
+
+    nozzleSlider.addEventListener("input", () => {
       const nozzleDiameter = parseInt(nozzleSlider.value, 10);
       nozzleOutput.textContent = nozzleDiameter;
 
@@ -1351,8 +1563,11 @@ function recreateSims() {
       });
 
       syncTargetUI();
-    });
+    }); 
 
+   // =====================================================
+    // Flow controls
+    // =====================================================
     document.getElementById("u0-slider").addEventListener("input", e => {
       const u0 = parseFloat(e.target.value);
       document.getElementById("u0-value").textContent = `Ma ${(u0 / CS_LATTICE).toFixed(2)}`;
@@ -1410,8 +1625,12 @@ function recreateSims() {
       });
 
       syncTargetUI();
-    }); 
-   document.getElementById("collision-trt").addEventListener("click", () => {
+    });
+
+    // =====================================================
+    // Physics controls
+    // =====================================================
+    document.getElementById("collision-trt").addEventListener("click", () => {
       targetedSims().forEach(sim => {
         sim.physics.collisionModel = "trt";
       });
@@ -1451,8 +1670,11 @@ function recreateSims() {
         sim.physics.wallModel = false;
       });
       syncTargetUI();
-    });
+    }); 
 
+   // =====================================================
+    // Display controls
+    // =====================================================
     document.getElementById("mode-speed").addEventListener("click", () => {
       setActiveBtn(modeGroup, "mode-speed");
       forAllSims(sim => sim.display.mode = "speed");
@@ -1489,14 +1711,18 @@ function recreateSims() {
       forAllSims(sim => sim.display.colorScale = scale);
     });
 
+    // =====================================================
+    // Runtime controls
+    // =====================================================
     document.getElementById("steps-slider").addEventListener("input", e => {
       const steps = parseInt(e.target.value, 10);
       document.getElementById("steps-value").textContent = steps;
       forAllSims(sim => {
         sim.runtime.stepsPerFrame = steps;
       });
-    }); 
-   sandboxBtn.addEventListener("click", () => {
+    });
+
+    sandboxBtn.addEventListener("click", () => {
       sandboxActive = !sandboxActive;
       sandboxBtn.classList.toggle("active", sandboxActive);
 
@@ -1529,8 +1755,11 @@ function recreateSims() {
       if (sim1) resetSim(sim1);
       if (sim2) resetSim(sim2);
       requestAnimationFrame(syncTargetUI);
-    });
+    }); 
 
+   // =====================================================
+    // Fidelity
+    // =====================================================
     document.getElementById("grid-low").addEventListener("click", () => {
       currentGridKey = "low";
       setActiveBtn(gridGroup, "grid-low");
@@ -1549,6 +1778,9 @@ function recreateSims() {
       recreateSims();
     });
 
+    // =====================================================
+    // Tooltip
+    // =====================================================
     document.querySelectorAll(".tooltip-trigger").forEach(el => {
       el.addEventListener("mouseenter", e => {
         tooltip.textContent = el.dataset.tip;
@@ -1579,9 +1811,12 @@ function recreateSims() {
       resizeOverlayCanvases();
       if (sim1?.convergence) sim1.convergence.resize();
       if (sim2?.convergence) sim2.convergence.resize();
-    });
+    }); 
 
-   document.getElementById("u0-value").textContent =
+   // =====================================================
+    // Initial UI sync / bootstrap
+    // =====================================================
+    document.getElementById("u0-value").textContent =
       `Ma ${(parseFloat(document.getElementById("u0-slider").value) / CS_LATTICE).toFixed(2)}`;
 
     document.getElementById("re-value").textContent =
@@ -1603,14 +1838,20 @@ function recreateSims() {
 
     updateGridStats();
     setActiveBtn(modeGroup, "mode-speed");
-    setActiveBtn(gridGroup, 'grid-mid');
+    setActiveBtn(gridGroup, "grid-mid");
+
     recreateSims();
+
     requestAnimationFrame(() => {
       resizeOverlayCanvases();
       syncTargetUI();
       renderDisplayButtons();
+      updateMonitorBars();
     });
+
     requestAnimationFrame(tick);
   </script>
 </body>
 </html> 
+
+
