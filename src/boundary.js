@@ -2,10 +2,9 @@
 // ============================================================
 // Compare-mode ready boundary conditions.
 // Updated for global fidelity presets: no fixed NX/NY imports.
-// Change 1: supports pulsing inlet velocity via sim.flow.
 // ============================================================
 
-import { feqAt, getInletVelocity } from "./simInstance.js";
+import { feqAt } from "./simInstance.js";
 
 // ---------------------------------------------------------
 // Sponge config
@@ -57,14 +56,10 @@ export function clearNozzleInlet(sim) {
 // ---------------------------------------------------------
 // applyBoundaryConditions(sim, u0)
 // ---------------------------------------------------------
-// u0 is kept for backward compatibility, but the actual inlet
-// velocity comes from getInletVelocity(sim) when pulsation is on.
 export function applyBoundaryConditions(sim, u0) {
   const { NX, NY, Q, f, rho, ux, uy, solid, nozzle } = sim;
   const idx = (x, y) => y * NX + x;
   const spongeW = getSpongeWeights(NX);
-
-  const inletBaseU = getInletVelocity(sim);
 
   // ---- left column: split inlet for nozzle, uniform for everything else ----
   for (let y = 0; y < NY; y++) {
@@ -74,9 +69,9 @@ export function applyBoundaryConditions(sim, u0) {
     let inletU;
     if (nozzle.active) {
       const distFromCenter = Math.abs(y - nozzle.cy);
-      inletU = distFromCenter <= nozzle.halfD ? inletBaseU : nozzle.uCoflow;
+      inletU = distFromCenter <= nozzle.halfD ? u0 : nozzle.uCoflow;
     } else {
-      inletU = inletBaseU;
+      inletU = u0;
     }
 
     const base = n * Q;
@@ -121,7 +116,7 @@ export function applyBoundaryConditions(sim, u0) {
   }
 
   // ---- top and bottom: coflow or freestream depending on mode ----
-  const wallU = nozzle.active ? nozzle.uCoflow : inletBaseU;
+  const wallU = nozzle.active ? nozzle.uCoflow : u0;
 
   for (let x = 0; x < NX; x++) {
     const nb = idx(x, 0);

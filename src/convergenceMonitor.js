@@ -12,6 +12,8 @@
 // - Only convergence metrics are normalized
 // - Force mode uses coefficient histories only
 // - Moment/Cm can be hidden for selected geometry types
+// - Force histories are sourced directly from sim.coeff so the
+//   monitor matches the solver's actual force/coefficient outputs
 // ============================================================
 
 const DEFAULT_SAMPLE_EVERY_FRAMES = 1;
@@ -124,9 +126,8 @@ export function createConvergenceMonitor(sim, options = {}) {
     cd: [],
     cl: [],
     cm: [],
-  };
-
-  function activeMetricKeys() {
+  }; 
+ function activeMetricKeys() {
     if (state.mode === "forces") {
       return shouldShowMoment(sim)
         ? MODE_CONFIG.forces
@@ -155,7 +156,7 @@ export function createConvergenceMonitor(sim, options = {}) {
     return true;
   }
 
-    function sampleNow() {
+  function sampleNow() {
     const ctx = buildSharedContext(sim, state);
 
     history.frame.push(sim.runtime?.frameCount ?? 0);
@@ -165,14 +166,14 @@ export function createConvergenceMonitor(sim, options = {}) {
     history.rmsDeltaU.push(METRICS.rmsDeltaU.compute(sim, ctx, state));
     history.meanRhoDev.push(METRICS.meanRhoDev.compute(sim, ctx, state));
 
-    // Use directly computed values from context, not sim.coeff
-    history.cd.push(ctx.cd);
-    history.cl.push(ctx.cl);
-    history.cm.push(ctx.cm);
+    // Use solver-computed coefficients directly
+    history.cd.push(METRICS.cd.compute(sim));
+    history.cl.push(METRICS.cl.compute(sim));
+    history.cm.push(METRICS.cm.compute(sim));
 
     updatePreviousSample(sim, state);
     trimHistory(history, maxHistory);
-    }
+  }
 
   function reset() {
     state.hasPrevSample = false;
@@ -213,9 +214,8 @@ export function createConvergenceMonitor(sim, options = {}) {
 
     state.canvas.width = Math.round(cssW * dpr);
     state.canvas.height = Math.round(cssH * dpr);
-  }
-
-  function clearCanvas() {
+  } 
+ function clearCanvas() {
     if (!state.ctx || !state.canvas) return;
     state.ctx.clearRect(0, 0, state.canvas.width, state.canvas.height);
   }
@@ -310,13 +310,13 @@ export function createConvergenceMonitor(sim, options = {}) {
         const value = frac * globalYMax;
 
         if (Math.abs(globalYMax) >= 1) {
-        label = value.toFixed(1);
+          label = value.toFixed(1);
         } else if (Math.abs(globalYMax) >= 0.1) {
-        label = value.toFixed(2);
+          label = value.toFixed(2);
         } else if (Math.abs(globalYMax) >= 0.01) {
-        label = value.toFixed(3);
+          label = value.toFixed(3);
         } else {
-        label = value.toFixed(4);
+          label = value.toFixed(4);
         }
       }
       ctx.fillText(label, 6, y + 3);
@@ -392,38 +392,49 @@ export function createConvergenceMonitor(sim, options = {}) {
       ctx.fillText(metric.label, lx + 12, ly);
 
       lx += ctx.measureText(metric.label).width + 28;
-    }
-    // ---- CL/CD scalar readout — top right corner ----
-    if (state.mode === 'forces' && history.cd.length > 0 && history.cl.length > 0) {
-    const lastCd = history.cd[history.cd.length - 1];
-    const lastCl = history.cl[history.cl.length - 1];
-    const lastCm = history.cm.length > 0 ? history.cm[history.cm.length - 1] : null;
-    const ratio  = Math.abs(lastCd) > 1e-6 ? lastCl / lastCd : 0;
+    } 
 
-    ctx.font = '500 9px "JetBrains Mono", monospace';
-    ctx.textAlign = 'right';
+  // ---- coefficient + raw force readout — top right corner ----
+    if (state.mode === "forces" && history.cd.length > 0 && history.cl.length > 0) {
+      const lastCd = history.cd[history.cd.length - 1];
+      const lastCl = history.cl[history.cl.length - 1];
+      const lastCm = history.cm.length > 0 ? history.cm[history.cm.length - 1] : null;
+      const ratio  = Math.abs(lastCd) > 1e-6 ? lastCl / lastCd : 0;
 
-    const lines = [
-        { label: 'Cd', val: lastCd,  color: METRICS.cd.color },
-        { label: 'Cl', val: lastCl,  color: METRICS.cl.color },
-        { label: 'Cl/Cd', val: ratio, color: '#ffffff' },
-    ];
+      const fx = sim.force?.fx ?? 0.0;
+      const fy = sim.force?.fy ?? 0.0;
+      const mz = sim.force?.mz ?? 0.0;
 
-    if (lastCm !== null && shouldShowMoment(sim)) {
-        lines.splice(2, 0, { label: 'Cm', val: lastCm, color: METRICS.cm.color });
-    }
+      ctx.font = '500 9px "JetBrains Mono", monospace';
+      ctx.textAlign = 'right';
 
-    let ry = top + 10;
-    for (const line of lines) {
+      const lines = [
+        { label: "Cd", val: lastCd, color: METRICS.cd.color },
+        { label: "Cl", val: lastCl, color: METRICS.cl.color },
+      ];
+
+      if (lastCm !== null && shouldShowMoment(sim)) {
+        lines.push({ label: "Cm", val: lastCm, color: METRICS.cm.color });
+      }
+
+      lines.push(
+        { label: "Cl/Cd", val: ratio, color: "#ffffff" },
+        { label: "Fx", val: fx, color: "#7fdfff" },
+        { label: "Fy", val: fy, color: "#ffd08a" },
+        { label: "Mz", val: mz, color: "#dcb0ff" },
+      );
+
+      let ry = top + 10;
+      for (const line of lines) {
         ctx.fillStyle = line.color;
         ctx.fillText(`${line.label}: ${line.val.toFixed(4)}`, right - 2, ry);
         ry += 12;
+      }
+
+      ctx.textAlign = "left"; // reset
     }
 
-    ctx.textAlign = 'left'; // reset
-    }
 
-    
 
     ctx.restore();
   }
@@ -450,38 +461,12 @@ export function createConvergenceMonitor(sim, options = {}) {
 // buildSharedContext(sim, state)
 // ---------------------------------------------------------
 function buildSharedContext(sim, state) {
-  const { N, NX, NY, Q, f, ux, uy, rho, solid, solidList } = sim;
-  const u0  = sim.params?.u0  || 0.1;
-  const rho0 = 1.0;
+  const { N, ux, uy, rho, solid } = sim;
 
   let fluidCount  = 0;
   let sumSpeed    = 0.0;
   let sumRhoDev   = 0.0;
   let sumDeltaUSq = 0.0;
-
-  // Force accumulation via momentum exchange on solid surface
-  // Uses the bounce-back momentum transfer: F = sum of (f_i - f_opp) * e_i
-  // for all solid-adjacent fluid nodes
-  let Fx = 0.0;  // drag direction (x)
-  let Fy = 0.0;  // lift direction (y)
-  let Mz = 0.0;  // moment about body centroid
-
-  // Find centroid of solid for moment arm
-  let scx = 0, scy = 0, sc = 0;
-  if (solidList) {
-    for (let k = 0; k < solidList.length; k++) {
-      const n = solidList[k];
-      scx += n % NX;
-      scy += (n / NX) | 0;
-      sc++;
-    }
-    if (sc > 0) { scx /= sc; scy /= sc; }
-  }
-
-  // D2Q9 opposite directions — same as lbm.js OPP
-  const OPP = [0, 3, 4, 1, 2, 7, 8, 5, 6];
-  const CX_  = [0, 1, 0,-1, 0, 1,-1,-1, 1];
-  const CY_  = [0, 0, 1, 0,-1, 1, 1,-1,-1];
 
   for (let n = 0; n < N; n++) {
     if (solid[n]) continue;
@@ -489,7 +474,7 @@ function buildSharedContext(sim, state) {
     const u = ux[n];
     const v = uy[n];
     const r = rho[n];
-    const spd = Math.sqrt(u*u + v*v);
+    const spd = Math.sqrt(u * u + v * v);
 
     fluidCount++;
     sumSpeed  += spd;
@@ -498,50 +483,15 @@ function buildSharedContext(sim, state) {
     if (state.hasPrevSample) {
       const du = u - state.prevUx[n];
       const dv = v - state.prevUy[n];
-      sumDeltaUSq += du*du + dv*dv;
-    }
-
-    // Check if any neighbor is solid — momentum exchange node
-    const x = n % NX;
-    const y = (n / NX) | 0;
-    const base = n * Q;
-
-    for (let i = 1; i < Q; i++) {
-      const nx_ = x + CX_[i];
-      const ny_ = y + CY_[i];
-      if (nx_ < 0 || nx_ >= NX || ny_ < 0 || ny_ >= NY) continue;
-      const nb = ny_ * NX + nx_;
-      if (!solid[nb]) continue;
-
-      // Momentum exchange: bounce-back force contribution
-      const fi   = f[base + i];
-      const fopp = f[base + OPP[i]];
-      const dfx  = (fi + fopp) * CX_[i];
-      const dfy  = (fi + fopp) * CY_[i];
-
-      Fx += dfx;
-      Fy += dfy;
-      // Moment arm from centroid
-      Mz += (x - scx) * dfy - (y - scy) * dfx;
+      sumDeltaUSq += du * du + dv * dv;
     }
   }
-
-  // Non-dimensionalize: C = F / (0.5 * rho0 * u0^2 * L)
-  // L = characteristic length from sim
-  const L    = sim.L || 1.0;
-  const qRef = 0.5 * rho0 * u0 * u0 * L;
-  const cd   = qRef > 0 ? Fx / qRef : 0;
-  const cl   = qRef > 0 ? Fy / qRef : 0;
-  const cm   = qRef > 0 ? Mz / (qRef * L) : 0;
 
   return {
     fluidCount,
     sumSpeed,
     sumRhoDev,
     sumDeltaUSq,
-    cd,
-    cl,
-    cm,
   };
 }
 
@@ -578,7 +528,4 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y + h, x, y, rr);
   ctx.arcTo(x, y, x + w, y, rr);
   ctx.closePath();
-}
-
-
-
+} 

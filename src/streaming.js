@@ -174,7 +174,7 @@ function applyBFL(sim) {
   const forceScale = sim.forceScale ?? 1.0;
   const momentScale = sim.momentScale ?? forceScale * Math.max(sim.L || 1.0, 1.0);
 
-  sim.coeff.cd = forceScale !== 0 ? fx / forceScale : 0.0;
+  sim.coeff.cd = forceScale !== 0 ? -fx / forceScale : 0.0;
   sim.coeff.cl = forceScale !== 0 ? fy / forceScale : 0.0;
   sim.coeff.cm = momentScale !== 0 ? mz / momentScale : 0.0;
 }
