@@ -2,9 +2,10 @@
 // ============================================================
 // Compare-mode ready streaming.
 // Updated for global fidelity presets: no fixed NX/NY imports.
-// Added: standard Ladd-style momentum exchange accumulation
-// for fixed SDF/BFL body links using the existing wall-link loop.
-// Added: drag/lift/moment coefficient calculation.
+//
+// This version keeps streaming + wall reconstruction only.
+// Force / moment / coefficient calculation is no longer done
+// here; it is handled separately by forceSurface.js.
 // ============================================================
 
 import { CX, CY, OPP } from "./lbm.js";
@@ -68,35 +69,17 @@ function streamInPlace(sim) {
 // ---------------------------------------------------------
 // applyBFL(sim)
 // ---------------------------------------------------------
+// Applies interpolated BFL wall reconstruction on blocked
+// fluid-solid links. No force accumulation is performed here.
+// ---------------------------------------------------------
 function applyBFL(sim) {
   const { NX, NY, Q, f, fSnapshot, linkMask, linkQ, fluidSurfaceList } = sim;
 
-  ensureForceStorage(sim);
+  if (!fluidSurfaceList || !linkMask || !linkQ) return;
 
-  if (!fluidSurfaceList || !linkMask || !linkQ) {
-    sim.force.fx = 0.0;
-    sim.force.fy = 0.0;
-    sim.force.mz = 0.0;
-
-    sim.coeff.cd = 0.0;
-    sim.coeff.cl = 0.0;
-    sim.coeff.cm = 0.0;
-    return;
-  }
-
+  // Snapshot post-stream field so BFL reconstruction uses a
+  // consistent source state.
   fSnapshot.set(f);
-
-  // -------------------------------------------------------
-  // Standard Ladd-style force accumulation
-  // Uses existing active wall-link loop (no extra pass).
-  // Reference point for moment comes from sim.forceRef if present.
-  // -------------------------------------------------------
-  let fx = 0.0;
-  let fy = 0.0;
-  let mz = 0.0;
-
-  const xRef = sim.forceRef?.x ?? 0.0;
-  const yRef = sim.forceRef?.y ?? 0.0;
 
   for (let k = 0; k < fluidSurfaceList.length; k++) {
     const n = fluidSurfaceList[k];
@@ -112,71 +95,38 @@ function applyBFL(sim) {
       const opp = OPP[i];
       const fOppHere = fSnapshot[baseN + opp];
 
-      // ---------------------------------------------------
-      // Apply BFL boundary update
-      // ---------------------------------------------------
+      // Halfway bounce-back
       if (Math.abs(q - 0.5) < 1e-6) {
         f[off] = fOppHere;
 
+      // Wall closer to fluid node
       } else if (q < 0.5) {
         const xb = x - CX[i];
         const yb = y - CY[i];
-        const fOppBehind = (xb >= 0 && xb < NX && yb >= 0 && yb < NY)
-          ? fSnapshot[(yb * NX + xb) * Q + opp]
-          : fOppHere;
+
+        const fOppBehind =
+          (xb >= 0 && xb < NX && yb >= 0 && yb < NY)
+            ? fSnapshot[(yb * NX + xb) * Q + opp]
+            : fOppHere;
 
         const inv1p2q = 1.0 / (1.0 + 2.0 * q);
         f[off] = inv1p2q * fOppHere + (2.0 * q * inv1p2q) * fOppBehind;
 
+      // Wall farther from fluid node
       } else {
         const xa = x + CX[i];
         const ya = y + CY[i];
-        const fOppAhead = (xa >= 0 && xa < NX && ya >= 0 && ya < NY)
-          ? fSnapshot[(ya * NX + xa) * Q + opp]
-          : fOppHere;
+
+        const fOppAhead =
+          (xa >= 0 && xa < NX && ya >= 0 && ya < NY)
+            ? fSnapshot[(ya * NX + xa) * Q + opp]
+            : fOppHere;
 
         const inv2q = 1.0 / (2.0 * q);
         f[off] = inv2q * fOppHere + (1.0 - inv2q) * fOppAhead;
       }
-
-      // ---------------------------------------------------
-      // Standard Ladd-style momentum exchange approximation
-      // ---------------------------------------------------
-      const fRet = f[off];
-
-      const dFx = (fRet + fOppHere) * CX[i];
-      const dFy = (fRet + fOppHere) * CY[i];
-
-      fx += dFx;
-      fy += dFy;
-
-      const xw = x + q * CX[i];
-      const yw = y + q * CY[i];
-
-      mz += (xw - xRef) * dFy - (yw - yRef) * dFx;
     }
   }
-
-  sim.force.fx = fx;
-  sim.force.fy = fy;
-  sim.force.mz = mz;
-
-  // -------------------------------------------------------
-  // Coefficients
-  //
-  // cd = Fx / forceScale
-  // cl = Fy / forceScale
-  // cm = Mz / momentScale
-  //
-  // forceScale and momentScale should be set elsewhere
-  // (e.g. in index.html when geometry is built/applied).
-  // -------------------------------------------------------
-  const forceScale = sim.forceScale ?? 1.0;
-  const momentScale = sim.momentScale ?? forceScale * Math.max(sim.L || 1.0, 1.0);
-
-  sim.coeff.cd = forceScale !== 0 ? -fx / forceScale : 0.0;
-  sim.coeff.cl = forceScale !== 0 ? fy / forceScale : 0.0;
-  sim.coeff.cm = momentScale !== 0 ? mz / momentScale : 0.0;
 }
 
 // ---------------------------------------------------------
@@ -193,27 +143,6 @@ function bounceBackNodes(sim) {
     tmp = f[base + 2]; f[base + 2] = f[base + 4]; f[base + 4] = tmp;
     tmp = f[base + 5]; f[base + 5] = f[base + 7]; f[base + 7] = tmp;
     tmp = f[base + 6]; f[base + 6] = f[base + 8]; f[base + 8] = tmp;
-  }
-}
-
-// ---------------------------------------------------------
-// ensureForceStorage(sim)
-// ---------------------------------------------------------
-function ensureForceStorage(sim) {
-  if (!sim.force) {
-    sim.force = {
-      fx: 0.0,
-      fy: 0.0,
-      mz: 0.0,
-    };
-  }
-
-  if (!sim.coeff) {
-    sim.coeff = {
-      cd: 0.0,
-      cl: 0.0,
-      cm: 0.0,
-    };
   }
 }
 

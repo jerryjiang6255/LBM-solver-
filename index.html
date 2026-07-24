@@ -364,6 +364,7 @@
     import { BodyRenderer } from "./src/renderBody.js";
     import { createUserDraw } from "./src/userDraw.js";
     import { createConvergenceMonitor } from "./src/convergenceMonitor.js";
+    import { computeSurfaceForces } from "./src/forceSurface.js";
     import {
       buildAirfoil,
       buildNACA2412,
@@ -1257,9 +1258,14 @@
       sim.runtime.frameCount = 0;
       sim.runtime.stepCount = 0;
       if (sim.convergence) sim.convergence.reset();
+
       const inletU = getInletVelocity(sim);
       applyBoundaryConditions(sim, inletU);
-    } 
+
+      // Initialize force/coefficient values immediately after reset
+      computeSurfaceForces(sim);
+    }
+
 
    // =====================================================
     // Canvas input
@@ -1335,13 +1341,20 @@
     // =====================================================
     function stepOnce(sim) {
       if (!sim || !sim.solid || !sim.userDraw) return;
+
       const inletU = getInletVelocity(sim);
+
       collideFused(sim, inletU);
       stream(sim);
       applyBoundaryConditions(sim, inletU);
+
+      // New pressure-based surface force evaluation
+      computeSurfaceForces(sim);
+
       sim.runtime.frameCount++;
       sim.runtime.stepCount++;
     }
+
 
     function resizeOverlayCanvases() {
       forAllSims(sim => {
