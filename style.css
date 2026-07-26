@@ -538,14 +538,18 @@ body {
   position: relative;
   flex: 1;
   min-width: 0;
-  display: grid;
-  grid-template-rows: auto;
-  align-items: start;
   border-radius: var(--radius-lg);
   overflow: hidden;
   border: 1px solid var(--border);
   box-shadow: 0 0 60px rgba(56,200,255,0.03);
 }
+.compare-wrap {
+  align-items: flex-start;
+}
+
+
+
+
 
 #flow-canvas-1,
 #flow-canvas-2 {
@@ -556,8 +560,10 @@ body {
   background: #060a10;
 }
 
+#particles-canvas-1,
 #body-canvas-1,
 #wall-canvas-1,
+#particles-canvas-2,
 #body-canvas-2,
 #wall-canvas-2 {
   position: absolute;
@@ -568,6 +574,8 @@ body {
   aspect-ratio: 256 / 128;
   pointer-events: none;
 }
+
+
 
 .convergence-canvas {
   position: absolute;
@@ -592,6 +600,40 @@ body {
 .compare-wrap.compare-active .canvas-wrap[data-label]::before {
   opacity: 1;
 }
+
+
+#flow-canvas-1,
+#flow-canvas-2 {
+  position: relative;
+  z-index: 1;
+}
+
+#particles-canvas-1,
+#particles-canvas-2 {
+  z-index: 2;
+}
+
+#body-canvas-1,
+#body-canvas-2 {
+  z-index: 3;
+}
+
+#wall-canvas-1,
+#wall-canvas-2 {
+  z-index: 4;
+}
+
+.convergence-canvas,
+.monitor-mode-bar {
+  z-index: 14;
+}
+
+#particles-canvas-1,
+#particles-canvas-2 {
+  opacity: 0.95;
+}
+
+
 
 /* ==========================================================
    TOOLTIP / ERROR
