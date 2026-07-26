@@ -71,12 +71,93 @@ const METRICS = {
       return sim.coeff?.cm ?? 0.0;
     },
   },
+
+   st: {
+    label: "St",
+    color: "#7fffd4",
+    compute(sim, ctx, state, history) {
+      const type = sim?.params?.bodyType;
+      if (type !== "cylinder" && type !== "square-cylinder") return 0.0;
+
+      const clHist = history.cl;
+      const stepHist = history.step;
+      const n = clHist.length;
+
+      if (n < 40) return 0.0;
+
+      const start = Math.max(0, n - 240);
+
+      let mean = 0.0;
+      let count = 0;
+      for (let i = start; i < n; i++) {
+        mean += clHist[i];
+        count++;
+      }
+      if (count < 20) return 0.0;
+      mean /= count;
+
+      let crossings = 0;
+      let firstStep = null;
+      let lastStep = null;
+
+      let prev = clHist[start] - mean;
+
+      for (let i = start + 1; i < n; i++) {
+        const curr = clHist[i] - mean;
+
+        if (prev <= 0 && curr > 0) {
+          const step = stepHist[i];
+          if (firstStep === null) firstStep = step;
+          lastStep = step;
+          crossings++;
+        }
+
+        prev = curr;
+      }
+
+      if (crossings < 2 || firstStep === null || lastStep === null || lastStep <= firstStep) {
+        return 0.0;
+      }
+
+      const cycles = crossings - 1;
+      const freq = cycles / (lastStep - firstStep);
+
+      const U = Math.max(sim?.params?.u0 ?? 0.0, 1e-9);
+      const L = Math.max(sim?.L ?? 0.0, 1e-9);
+
+      return (freq * L) / U;
+    },
+  },
+
+   uCenter: {
+    label: "Ucenter",
+    color: "#62d8ff",
+    compute(sim) {
+      const x = Math.floor(sim.NX * 0.5);
+      const y = Math.floor(sim.NY * 0.5);
+      const n = y * sim.NX + x;
+      return sim.ux?.[n] ?? 0.0;
+    },
+  },
+
+  vCenter: {
+    label: "Vcenter",
+    color: "#ffc27a",
+    compute(sim) {
+      const x = Math.floor(sim.NX * 0.5);
+      const y = Math.floor(sim.NY * 0.5);
+      const n = y * sim.NX + x;
+      return sim.uy?.[n] ?? 0.0;
+    },
+  },
+
 };
 
 const MODE_CONFIG = {
   convergence: ["meanSpeed", "rmsDeltaU", "meanRhoDev"],
-  forces: ["cd", "cl", "cm"],
+  forces: ["cd", "cl", "cm", "st"],
 };
+
 
 // Geometries for which moment / Cm are meaningful enough to show
 function shouldShowMoment(sim) {
@@ -115,7 +196,7 @@ export function createConvergenceMonitor(sim, options = {}) {
     mode: "convergence",
   };
 
-  const history = {
+ const history = {
     frame: [],
     step: [],
 
@@ -126,15 +207,31 @@ export function createConvergenceMonitor(sim, options = {}) {
     cd: [],
     cl: [],
     cm: [],
-  }; 
- function activeMetricKeys() {
-    if (state.mode === "forces") {
-      return shouldShowMoment(sim)
-        ? MODE_CONFIG.forces
-        : ["cd", "cl"];
+    st: [],
+    uCenter: [],
+    vCenter: [],
+  };
+
+function activeMetricKeys() {
+  if (state.mode === "forces") {
+    const type = sim?.params?.bodyType;
+
+    if (type === "lid-driven-cavity") {
+      return ["uCenter", "vCenter"];
     }
-    return MODE_CONFIG.convergence;
+
+    const showMoment = shouldShowMoment(sim);
+    const showSt = type === "cylinder" || type === "square-cylinder";
+
+    const keys = ["cd", "cl"];
+    if (showMoment) keys.push("cm");
+    if (showSt) keys.push("st");
+    return keys;
   }
+
+  return MODE_CONFIG.convergence;
+}
+
 
   function setMode(mode) {
     if (mode === "forces" || mode === "convergence") {
@@ -167,9 +264,14 @@ export function createConvergenceMonitor(sim, options = {}) {
     history.meanRhoDev.push(METRICS.meanRhoDev.compute(sim, ctx, state));
 
     // Use solver-computed coefficients directly
-    history.cd.push(METRICS.cd.compute(sim));
+   history.cd.push(METRICS.cd.compute(sim));
     history.cl.push(METRICS.cl.compute(sim));
     history.cm.push(METRICS.cm.compute(sim));
+    history.st.push(METRICS.st.compute(sim, ctx, state, history));
+    history.uCenter.push(METRICS.uCenter.compute(sim));
+    history.vCenter.push(METRICS.vCenter.compute(sim));
+
+
 
     updatePreviousSample(sim, state);
     trimHistory(history, maxHistory);
@@ -400,6 +502,11 @@ export function createConvergenceMonitor(sim, options = {}) {
       const lastCl = history.cl[history.cl.length - 1];
       const lastCm = history.cm.length > 0 ? history.cm[history.cm.length - 1] : null;
       const ratio  = Math.abs(lastCd) > 1e-6 ? lastCl / lastCd : 0;
+      const lastSt = history.st.length > 0 ? history.st[history.st.length - 1] : null;
+      const showSt = sim?.params?.bodyType === "cylinder" || sim?.params?.bodyType === "square-cylinder";
+      const isCavity = sim?.params?.bodyType === "lid-driven-cavity";
+
+
 
       const fx = sim.force?.fx ?? 0.0;
       const fy = sim.force?.fy ?? 0.0;
@@ -408,7 +515,29 @@ export function createConvergenceMonitor(sim, options = {}) {
       ctx.font = '500 9px "JetBrains Mono", monospace';
       ctx.textAlign = 'right';
 
-      const lines = [
+      if (isCavity) {
+        const lastU = history.uCenter.length > 0 ? history.uCenter[history.uCenter.length - 1] : 0.0;
+        const lastV = history.vCenter.length > 0 ? history.vCenter[history.vCenter.length - 1] : 0.0;
+
+        const lines = [
+          { label: "Ucenter", val: lastU, color: METRICS.uCenter.color },
+          { label: "Vcenter", val: lastV, color: METRICS.vCenter.color },
+        ];
+
+        let ry = top + 10;
+        for (const line of lines) {
+          ctx.fillStyle = line.color;
+          ctx.fillText(`${line.label}: ${line.val.toFixed(4)}`, right - 2, ry);
+          ry += 12;
+        }
+
+        ctx.textAlign = "left";
+        ctx.restore();
+        return;
+      }
+
+
+     const lines = [
         { label: "Cd", val: lastCd, color: METRICS.cd.color },
         { label: "Cl", val: lastCl, color: METRICS.cl.color },
       ];
@@ -417,12 +546,17 @@ export function createConvergenceMonitor(sim, options = {}) {
         lines.push({ label: "Cm", val: lastCm, color: METRICS.cm.color });
       }
 
+      if (showSt && lastSt !== null) {
+        lines.push({ label: "St", val: lastSt, color: METRICS.st.color });
+      }
+
       lines.push(
         { label: "Cl/Cd", val: ratio, color: "#ffffff" },
-        { label: "Fx", val: fx, color: "#7fdfff" },
-        { label: "Fy", val: fy, color: "#ffd08a" },
-        { label: "Mz", val: mz, color: "#dcb0ff" },
+        // { label: "Fx", val: fx, color: "#7fdfff" },
+        // { label: "Fy", val: fy, color: "#ffd08a" },
+        // { label: "Mz", val: mz, color: "#dcb0ff" },
       );
+
 
       let ry = top + 10;
       for (const line of lines) {

@@ -59,6 +59,58 @@ export function clearNozzleInlet(sim) {
 export function applyBoundaryConditions(sim, u0) {
   const { NX, NY, Q, f, rho, ux, uy, solid, nozzle } = sim;
   const idx = (x, y) => y * NX + x;
+
+  // -------------------------------------------------------
+  // Lid-driven cavity mode
+  // -------------------------------------------------------
+  if (sim.params?.bodyType === "lid-driven-cavity") {
+    // Moving top lid on the first interior fluid row
+    const yTop = 2;
+    for (let x = 1; x < NX - 1; x++) {
+      const n = idx(x, yTop);
+      if (solid[n]) continue;
+
+      const base = n * Q;
+      for (let i = 0; i < Q; i++) {
+        f[base + i] = feqAt(i, 1.0, u0, 0.0);
+      }
+    }
+
+    const yBot = NY - 3;
+    for (let x = 1; x < NX - 1; x++) {
+      const n = idx(x, yBot);
+      if (solid[n]) continue;
+
+      const base = n * Q;
+      for (let i = 0; i < Q; i++) {
+        f[base + i] = feqAt(i, 1.0, 0.0, 0.0);
+      }
+    }
+
+
+    // Optional corner-adjacent stabilization for left/right interior columns
+    // for (let y = 1; y < NY - 1; y++) {
+    //   const nL = idx(1, y);
+    //   const nR = idx(NX - 2, y);
+
+    //   if (!solid[nL]) {
+    //     const baseL = nL * Q;
+    //     for (let i = 0; i < Q; i++) {
+    //       f[baseL + i] = feqAt(i, 1.0, 0.0, 0.0);
+    //     }
+    //   }
+
+    //   if (!solid[nR]) {
+    //     const baseR = nR * Q;
+    //     for (let i = 0; i < Q; i++) {
+    //       f[baseR + i] = feqAt(i, 1.0, 0.0, 0.0);
+    //     }
+    //   }
+    // }
+
+    return;
+  }
+
   const spongeW = getSpongeWeights(NX);
 
   // ---- left column: split inlet for nozzle, uniform for everything else ----

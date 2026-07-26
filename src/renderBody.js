@@ -39,12 +39,48 @@ export class BodyRenderer {
     if (params.type === "cylinder") {
       drawCylinder(ctx, params, sx, sy);
 
+
+      // -----------------------------------------------------
+    // Lid-driven cavity
     // -----------------------------------------------------
-    // Tandem cylinders
-    // -----------------------------------------------------
-    } else if (params.type === "tandem-cylinders") {
-      drawCylinder(ctx, { cx: params.cx1, cy: params.cy, radius: params.radius }, sx, sy);
-      drawCylinder(ctx, { cx: params.cx2, cy: params.cy, radius: params.radius }, sx, sy);
+    } else if (params.type === "lid-driven-cavity") {
+      const wallThickness = params.wallThickness ?? 1;
+
+      // Make the visual wall noticeably thicker than the raw lattice wall
+      const tX = Math.max(wallThickness * sx, 18);
+      const tY = Math.max(wallThickness * sy, 18);
+
+      const outerX = 0;
+      const outerY = 0;
+      const outerW = Wc;
+      const outerH = Hc;
+
+      const innerX = tX;
+      const innerY = tY;
+      const innerW = Wc - 2 * tX;
+      const innerH = Hc - 2 * tY;
+
+      const r = Math.max(0.1, Math.min(innerW, innerH) * 0.01);
+
+      // Single compound path: outer rect minus rounded inner opening
+      ctx.beginPath();
+      ctx.rect(outerX, outerY, outerW, outerH);
+      ctx.roundRect(innerX, innerY, innerW, innerH, r);
+
+      ctx.fillStyle = "#1a1f2e";
+      ctx.fill("evenodd");
+
+      // Outer outline
+      ctx.strokeStyle = "rgba(175,198,230,0.78)";
+      ctx.lineWidth = 1.4;
+      ctx.strokeRect(0.5, 0.5, Wc - 1, Hc - 1);
+
+      // Inner rounded outline
+      ctx.beginPath();
+      ctx.roundRect(innerX + 0.5, innerY + 0.5, innerW - 1, innerH - 1, r);
+      ctx.strokeStyle = "rgba(175,198,230,0.55)";
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
 
     // -----------------------------------------------------
     // Airfoil families

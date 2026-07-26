@@ -297,6 +297,33 @@ function shouldRecycle(state, sim, i, ux, uy) {
 }
 
 function respawn(state, sim, i) {
+  if (sim.params?.bodyType === "lid-driven-cavity") {
+    for (let k = 0; k < state.respawnAttempts; k++) {
+      const x = 2 + rand(state) * Math.max(1, sim.NX - 4);
+      const y = 2 + rand(state) * Math.max(1, sim.NY - 4);
+
+      const xi = clampInt(x | 0, 0, sim.NX - 1);
+      const yi = clampInt(y | 0, 0, sim.NY - 1);
+      const n = yi * sim.NX + xi;
+
+      if (!sim.solid[n]) {
+        state.x[i] = x;
+        state.y[i] = y;
+        state.spd[i] = 0.0;
+        state.vx[i] = 0.0;
+        state.vy[i] = 0.0;
+        return;
+      }
+    }
+
+    state.x[i] = sim.NX * 0.5;
+    state.y[i] = sim.NY * 0.5;
+    state.spd[i] = 0.0;
+    state.vx[i] = 0.0;
+    state.vy[i] = 0.0;
+    return;
+  }
+
   for (let k = 0; k < state.respawnAttempts; k++) {
     const x = rand(state) * state.respawnXMax;
     const y = seedY(state, sim);

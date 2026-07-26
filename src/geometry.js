@@ -3,11 +3,6 @@
 // Compare-mode ready geometry builders.
 // Updated for global fidelity presets: geometry no longer imports
 // fixed NX/NY/N from lbm.js. Dimensions are passed in explicitly.
-//
-// Change 2 additions:
-// - NACA2412 airfoil
-// - tandem cylinders with horizontal spacing
-// - square cylinder with rotation / AoA
 // ============================================================
 
 import { Q, CX, CY } from "./lbm.js";
@@ -37,6 +32,21 @@ function sdfNACA0012(cx, cy, chord, alpha) {
 function sdfNACA2412(cx, cy, chord, alpha) {
   return sdfNACA4(cx, cy, chord, alpha, 0.02, 0.4, 0.12);
 }
+
+function sdfLidDrivenCavity(NX, NY, wallThickness = 1) {
+  return (x, y) => {
+    const left   = x - wallThickness;
+    const right  = (NX - 1 - wallThickness) - x;
+    const bottom = y - wallThickness;
+    const top    = (NY - 1 - wallThickness) - y;
+
+    const minDistToInnerBox = Math.min(left, right, bottom, top);
+
+    // Solid walls, fluid interior
+    return minDistToInnerBox;
+  };
+}
+
 
 // ---------------------------------------------------------
 // sdfNACA4(...)
@@ -288,27 +298,19 @@ export function buildSquareCylinder(dims, cx, cy, size, alpha) {
 }
 
 // ---------------------------------------------------------
-// buildTandemCylinders(dims, cx, cy, radius, spacing)
+// buildLidDrivenCavity(dims)
 // ---------------------------------------------------------
-export function buildTandemCylinders(dims, cx, cy, radius, spacing) {
-  const cx1 = cx - spacing / 2;
-  const cx2 = cx + spacing / 2;
-
-  const sdf = sdfUnion(
-    sdfCircle(cx1, cy, radius),
-    sdfCircle(cx2, cy, radius)
-  );
+export function buildLidDrivenCavity(dims) {
+  const { NX, NY } = dims;
+  const wallThickness = 1;
 
   return {
-    geometry: buildGeometryFromSDF(dims, sdf),
-    cx1,
-    cx2,
-    cy,
-    radius,
-    spacing,
-    charLength: 2 * radius,
+    geometry: buildGeometryFromSDF(dims, sdfLidDrivenCavity(NX, NY, wallThickness)),
+    wallThickness,
+    charLength: NY - 2 * wallThickness,
   };
 }
+
 
 export function buildEmpty(dims) {
   return {
@@ -388,16 +390,12 @@ export function defaultSquareCylinder(dims) {
 }
 
 // ---------------------------------------------------------
-// defaultTandemCylinders(dims)
+// defaultLidDrivenCavity(dims)
 // ---------------------------------------------------------
-export function defaultTandemCylinders(dims) {
-  const { NX, NY } = dims;
-  const cx      = Math.floor(NX * 0.30);
-  const cy      = Math.floor(NY / 2);
-  const radius  = Math.max(4, Math.floor(NY / 10));
-  const spacing = Math.max(12, Math.floor(NX * 0.12));
-  return buildTandemCylinders(dims, cx, cy, radius, spacing);
+export function defaultLidDrivenCavity(dims) {
+  return buildLidDrivenCavity(dims);
 }
+
 
 export function buildNozzle(dims, cy, diameter) {
   const { NX } = dims;

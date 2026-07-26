@@ -76,7 +76,7 @@
           </div>
           <div class="btn-grid">
             <button class="btn control-btn" id="body-cylinder">Cylinder</button>
-            <button class="btn control-btn" id="body-tandem-cylinders">Tandem Cylinder</button>
+            <button class="btn control-btn" id="body-lid-driven-cavity">Lid Cavity</button>
             <button class="btn control-btn" id="body-square-cylinder">Square</button>
             <button class="btn control-btn" id="body-empty">Empty</button>
           </div>
@@ -97,12 +97,20 @@
             <input type="range" id="nozzle-slider" class="control-slider" min="8" max="80" step="2" value="16">
           </div>
 
-          <div class="slider-row" id="tandem-row" style="display:none">
+          <div class="slider-row" id="cylinder-row" style="display:none">
             <label>
-              <span>Tandem spacing</span>
-              <output id="tandem-value">30</output>
+              <span>Cylinder diameter</span>
+              <output id="cylinder-value">32</output>
             </label>
-            <input type="range" id="tandem-slider" class="control-slider" min="8" max="120" step="2" value="30">
+            <input type="range" id="cylinder-slider" class="control-slider" min="8" max="96" step="2" value="32">
+          </div>
+
+
+          <div class="slider-row" id="cavity-row" style="display:none">
+            <label>
+              <span>Lid speed control</span>
+              <output id="cavity-value">Uses velocity slider</output>
+            </label>
           </div>
         </div>
 
@@ -120,7 +128,7 @@
 
           <div class="slider-row">
             <label>
-              <span>Inlet velocity</span>
+              <span id="u0-label">Inlet velocity</span>
               <output id="u0-value">Ma=0.30</output>
             </label>
             <input type="range" id="u0-slider" class="control-slider" min="0.01" max="0.23" step="0.005" value="0.1732" />
@@ -372,16 +380,16 @@
     import { createUserDraw } from "./src/userDraw.js";
     import { createConvergenceMonitor } from "./src/convergenceMonitor.js";
     import { createParticles } from "./src/particles.js";
-import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurface.js";
+    import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurface.js";
     import {
       buildAirfoil,
       buildNACA2412,
       buildEmpty,
       defaultBlockMatrix,
       buildNozzle,
-      defaultCylinder,
+      buildCylinder,
       buildSquareCylinder,
-      buildTandemCylinders
+      buildLidDrivenCavity
     } from "./src/geometry.js";
 
     // =====================================================
@@ -432,12 +440,13 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
 
     const aoaRow = document.getElementById("aoa-row");
     const nozzleRow = document.getElementById("nozzle-row");
-    const tandemRow = document.getElementById("tandem-row");
-
+    const cavityRow = document.getElementById("cavity-row");
     const nozzleSlider = document.getElementById("nozzle-slider");
     const nozzleOutput = document.getElementById("nozzle-value");
-    const tandemSlider = document.getElementById("tandem-slider");
-    const tandemOutput = document.getElementById("tandem-value");
+    const cylinderRow = document.getElementById("cylinder-row");
+    const cylinderSlider = document.getElementById("cylinder-slider");
+    const cylinderOutput = document.getElementById("cylinder-value");
+
 
     const pulseAmpRow = document.getElementById("pulse-amp-row");
     const pulseFreqRow = document.getElementById("pulse-freq-row");
@@ -462,7 +471,7 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
       "body-naca2412",
       "body-cylinder",
       "body-square-cylinder",
-      "body-tandem-cylinders",
+      "body-lid-driven-cavity",
       "body-nozzle",
       "body-blocks",
       "body-empty"
@@ -483,7 +492,7 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
           "body-naca2412": "naca2412",
           "body-cylinder": "cylinder",
           "body-square-cylinder": "square-cylinder",
-          "body-tandem-cylinders": "tandem-cylinders",
+          "body-lid-driven-cavity": "lid-driven-cavity",
           "body-nozzle": "nozzle",
           "body-blocks": "blocks",
           "body-empty": "empty",
@@ -539,12 +548,13 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
     const TARGET_CONTROL_SLIDERS = [
       "aoa-slider",
       "nozzle-slider",
-      "tandem-slider",
+      "cylinder-slider",
       "u0-slider",
       "pulse-amp-slider",
       "pulse-freq-slider",
       "re-slider"
     ];
+
 
     const DISPLAY_GLOBAL_BUTTONS = [
       "vector-btn",
@@ -656,6 +666,20 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
     function groupValuesEqual(v1, v2) {
       return v1 === v2;
     }
+    function updateVelocityLabel() {
+      const label = document.getElementById("u0-label");
+      if (!label) return;
+
+      const mode = activeTargetMode();
+      let refSim = sim1;
+      if (compareMode && mode === "flow2" && sim2) refSim = sim2;
+      if (compareMode && mode === "both" && lastTargetedFlow === 2 && sim2) refSim = sim2;
+
+      label.textContent =
+        refSim?.params?.bodyType === "lid-driven-cavity"
+          ? "Lid velocity"
+          : "Inlet velocity";
+    }
 
     function renderCompareGroup(groupConfig) {
       const { ids, getValue, idToValue } = groupConfig;
@@ -724,17 +748,21 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
             setValueText(v) { nozzleOutput.textContent = `${Math.round(v)}`; },
           };
 
-        case "tandem-slider":
-          return {
-            getValue(sim) { return sim?.params?.tandemSpacing ?? parseInt(tandemSlider.value, 10); },
-            setValueText(v) { tandemOutput.textContent = `${Math.round(v)}`; },
-          };
 
-        case "u0-slider":
+       case "u0-slider":
           return {
             getValue(sim) { return sim?.params?.u0 ?? 0.1732; },
-            setValueText(v) { document.getElementById("u0-value").textContent = `Ma ${(v / CS_LATTICE).toFixed(2)}`; },
+            setValueText(v) {
+              document.getElementById("u0-value").textContent =
+                `Ma ${(v / CS_LATTICE).toFixed(2)}`;
+            },
           };
+
+          case "cylinder-slider":
+            return {
+              getValue(sim) { return sim?.params?.cylinderDiameter ?? 32; },
+              setValueText(v) { cylinderOutput.textContent = `${Math.round(v)}`; },
+            };
 
         case "pulse-amp-slider":
           return {
@@ -844,8 +872,11 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
       const aoaBodies = new Set(["airfoil", "naca2412", "square-cylinder"]);
       aoaRow.style.display = aoaBodies.has(type) ? "" : "none";
       nozzleRow.style.display = type === "nozzle" ? "" : "none";
-      tandemRow.style.display = type === "tandem-cylinders" ? "" : "none";
+      cylinderRow.style.display = type === "cylinder" ? "" : "none";
+      cavityRow.style.display = type === "lid-driven-cavity" ? "" : "none";
     }
+
+
 
     function syncTargetUI() {
       updateFlowLabels();
@@ -853,6 +884,8 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
       renderAllSliders();
       renderDisplayButtons();
       updatePulseRows();
+      updateVelocityLabel();
+
 
       const mode = activeTargetMode();
       let refSim = sim1;
@@ -981,6 +1014,7 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
         bodyType,
         aoaDeg,
         nozzleDiameter: overrides.nozzleDiameter ?? parseInt(nozzleSlider.value, 10),
+        cylinderDiameter: overrides.cylinderDiameter ?? parseInt(cylinderSlider.value, 10),
         u0: overrides.u0 ?? parseFloat(document.getElementById("u0-slider").value),
         reynolds: overrides.reynolds ?? parseFloat(document.getElementById("re-slider").value),
         displayMode: document.getElementById("mode-qcrit").classList.contains("active") ? "qcrit" : "speed",
@@ -1022,13 +1056,11 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
           pulsationOn: prevSim1.flow.pulsationOn,
           pulsationAmp: prevSim1.flow.pulsationAmp,
           pulsationFreq: prevSim1.flow.pulsationFreq,
+          cylinderDiameter: prevSim1.params.cylinderDiameter,
         } : {}
       );
 
-      sim1.params.tandemSpacing =
-        typeof prevSim1?.params?.tandemSpacing === "number"
-          ? prevSim1.params.tandemSpacing
-          : parseInt(tandemSlider.value, 10);
+
 
       setupSim(sim1, "flow-canvas-1", "body-canvas-1", "wall-canvas-1", "conv-canvas-1");
 
@@ -1047,13 +1079,11 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
             pulsationOn: prevSim2.flow.pulsationOn,
             pulsationAmp: prevSim2.flow.pulsationAmp,
             pulsationFreq: prevSim2.flow.pulsationFreq,
+            cylinderDiameter: prevSim2.params.cylinderDiameter,
           } : {}
         );
 
-        sim2.params.tandemSpacing =
-          typeof prevSim2?.params?.tandemSpacing === "number"
-            ? prevSim2.params.tandemSpacing
-            : parseInt(tandemSlider.value, 10);
+
 
         setupSim(sim2, "flow-canvas-2", "body-canvas-2", "wall-canvas-2", "conv-canvas-2");
       } else {
@@ -1117,22 +1147,14 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
         };
       }
 
-      if (bodyType === "tandem-cylinders") {
-        const cx = Math.floor(sim.NX * 0.30);
-        const cy = Math.floor(sim.NY / 2);
-        const radius = Math.max(4, Math.floor(sim.NY / 10));
-        const spacing = sim.params.tandemSpacing ?? parseInt(tandemSlider.value, 10);
-        const result = buildTandemCylinders(dims, cx, cy, radius, spacing);
+     if (bodyType === "lid-driven-cavity") {
+        const result = buildLidDrivenCavity(dims);
 
         return {
           g: result.geometry,
           p: {
-            type: "tandem-cylinders",
-            cx1: result.cx1,
-            cx2: result.cx2,
-            cy: result.cy,
-            radius: result.radius,
-            spacing: result.spacing
+            type: "lid-driven-cavity",
+            wallThickness: result.wallThickness
           },
           charLength: result.charLength
         };
@@ -1170,17 +1192,25 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
         };
       }
 
-      const result = defaultCylinder(dims);
-      return {
-        g: result.geometry,
-        p: {
-          type: "cylinder",
-          cx: Math.floor(sim.NX / 4),
-          cy: Math.floor(sim.NY / 2),
-          radius: Math.max(4, Math.floor(sim.NY / 8))
-        },
-        charLength: result.charLength
-      };
+     if (bodyType === "cylinder") {
+        const cx = Math.floor(sim.NX / 4);
+        const cy = Math.floor(sim.NY / 2);
+        const diameter = sim.params.cylinderDiameter ?? Math.max(8, Math.floor(sim.NY / 4));
+        const radius = diameter * 0.5;
+        const result = buildCylinder(dims, cx, cy, radius);
+
+        return {
+          g: result.geometry,
+          p: {
+            type: "cylinder",
+            cx,
+            cy,
+            radius
+          },
+          charLength: result.charLength
+        };
+      }
+
     }
 
     function applyGeometry(sim, { g, p, charLength }) {
@@ -1224,13 +1254,13 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
         sim.forceScale = qDyn * p.size;
         sim.momentScale = qDyn * p.size * p.size;
 
-      } else if (p.type === "tandem-cylinders") {
-        const d = 2 * p.radius;
-        sim.forceRef.x = 0.5 * (p.cx1 + p.cx2);
-        sim.forceRef.y = p.cy;
+     } else if (p.type === "lid-driven-cavity") {
+        sim.forceRef.x = sim.NX * 0.5;
+        sim.forceRef.y = sim.NY * 0.5;
 
-        sim.forceScale = qDyn * d;
-        sim.momentScale = qDyn * d * d;
+        sim.forceScale = qDyn * (charLength || sim.L || 1.0);
+        sim.momentScale = qDyn * Math.pow(charLength || sim.L || 1.0, 2);
+
 
       } else if (p.type === "nozzle") {
         sim.forceRef.x = p.length * 0.5;
@@ -1256,8 +1286,11 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
 
       if (sim.bodyRenderer) {
         sim.bodyRenderer.clear();
-        if (sim.params.bodyType !== "empty") sim.bodyRenderer.draw(p);
+        if (sim.params.bodyType !== "empty") {
+          sim.bodyRenderer.draw(p);
+        }
       }
+
 
       if (sim.nozzle) {
         if (sim.params.bodyType === "nozzle") {
@@ -1407,10 +1440,9 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
         sim.convCanvas.style.width = `${cssW}px`;
         sim.convCanvas.style.height = `${cssH}px`;
         if (sim.convergence) sim.convergence.resize();
-
-        if (sim.particles) sim.particles.resizeCanvas();
       });
     }
+
 
 
     let lastTime = performance.now();
@@ -1508,11 +1540,9 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
         const currentAoaDeg = sim1 ? sim1.params.aoaDeg : 10;
 
         sim1 = createSim("sim1", currentBodyType, currentAoaDeg);
-        sim1.params.tandemSpacing ??= parseInt(tandemSlider.value, 10);
         setupSim(sim1, "flow-canvas-1", "body-canvas-1", "wall-canvas-1", "conv-canvas-1");
 
         sim2 = createSim("sim2", "naca2412", currentAoaDeg);
-        sim2.params.tandemSpacing ??= parseInt(tandemSlider.value, 10);
         setupSim(sim2, "flow-canvas-2", "body-canvas-2", "wall-canvas-2", "conv-canvas-2");
 
         target1Active = true;
@@ -1530,7 +1560,6 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
         const currentAoaDeg = sim1 ? sim1.params.aoaDeg : 10;
 
         sim1 = createSim("sim1", currentBodyType, currentAoaDeg);
-        sim1.params.tandemSpacing ??= parseInt(tandemSlider.value, 10);
         setupSim(sim1, "flow-canvas-1", "body-canvas-1", "wall-canvas-1", "conv-canvas-1");
 
         sim2 = null;
@@ -1571,26 +1600,25 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
     // =====================================================
     // Body controls
     // =====================================================
-    function switchBody(type) {
+   function switchBody(type) {
       targetedSims().forEach(sim => {
         sim.params.bodyType = type;
-        if (type === "tandem-cylinders" && typeof sim.params.tandemSpacing !== "number") {
-          sim.params.tandemSpacing = parseInt(tandemSlider.value, 10);
-        }
         rebuildGeometryOnly(sim);
       });
 
       syncTargetUI();
     }
 
+
     document.getElementById("body-cylinder").addEventListener("click", () => switchBody("cylinder"));
     document.getElementById("body-airfoil").addEventListener("click", () => switchBody("airfoil"));
     document.getElementById("body-naca2412").addEventListener("click", () => switchBody("naca2412"));
     document.getElementById("body-square-cylinder").addEventListener("click", () => switchBody("square-cylinder"));
-    document.getElementById("body-tandem-cylinders").addEventListener("click", () => switchBody("tandem-cylinders"));
+    document.getElementById("body-lid-driven-cavity").addEventListener("click", () => switchBody("lid-driven-cavity"));
     document.getElementById("body-blocks").addEventListener("click", () => switchBody("blocks"));
     document.getElementById("body-empty").addEventListener("click", () => switchBody("empty"));
     document.getElementById("body-nozzle").addEventListener("click", () => switchBody("nozzle"));
+
 
     document.getElementById("aoa-slider").addEventListener("input", e => {
       const aoaDeg = parseFloat(e.target.value);
@@ -1621,33 +1649,40 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
       syncTargetUI();
     });
 
-    tandemSlider.addEventListener("input", () => {
-      const spacing = parseInt(tandemSlider.value, 10);
-      tandemOutput.textContent = spacing;
+    cylinderSlider.addEventListener("input", () => {
+      const diameter = parseInt(cylinderSlider.value, 10);
+      cylinderOutput.textContent = diameter;
 
       targetedSims().forEach(sim => {
-        sim.params.tandemSpacing = spacing;
-        if (sim.params.bodyType === "tandem-cylinders") {
+        sim.params.cylinderDiameter = diameter;
+        if (sim.params.bodyType === "cylinder") {
           rebuildGeometryOnly(sim);
         }
       });
 
       syncTargetUI();
-    }); 
+    });
+
+
 
    // =====================================================
     // Flow controls
     // =====================================================
-    document.getElementById("u0-slider").addEventListener("input", e => {
-      const u0 = parseFloat(e.target.value);
-      document.getElementById("u0-value").textContent = `Ma ${(u0 / CS_LATTICE).toFixed(2)}`;
+document.getElementById("u0-slider").addEventListener("input", e => {
+  const u0 = parseFloat(e.target.value);
 
-      targetedSims().forEach(sim => {
-        sim.params.u0 = u0;
-      });
+  targetedSims().forEach(sim => {
+    sim.params.u0 = u0;
+  });
 
-      syncTargetUI();
-    });
+  document.getElementById("u0-value").textContent =
+    `Ma ${(u0 / CS_LATTICE).toFixed(2)}`;
+
+  syncTargetUI();
+});
+
+
+
 
     document.getElementById("re-slider").addEventListener("input", e => {
       const reynolds = parseFloat(e.target.value);
@@ -1893,15 +1928,21 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
 
     window.addEventListener("resize", () => {
       resizeOverlayCanvases();
+
       if (sim1?.convergence) sim1.convergence.resize();
       if (sim2?.convergence) sim2.convergence.resize();
-    }); 
+
+      if (sim1?.particles) sim1.particles.resizeCanvas();
+      if (sim2?.particles) sim2.particles.resizeCanvas();
+    });
+
 
    // =====================================================
     // Initial UI sync / bootstrap
     // =====================================================
-    document.getElementById("u0-value").textContent =
-      `Ma ${(parseFloat(document.getElementById("u0-slider").value) / CS_LATTICE).toFixed(2)}`;
+document.getElementById("u0-value").textContent =
+  `Ma ${(parseFloat(document.getElementById("u0-slider").value) / CS_LATTICE).toFixed(2)}`;
+
 
     document.getElementById("re-value").textContent =
       parseFloat(document.getElementById("re-slider").value).toFixed(0);
@@ -1916,7 +1957,7 @@ import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurf
       parseFloat(document.getElementById("aoa-slider").value).toFixed(1) + "°";
 
     nozzleOutput.textContent = parseInt(nozzleSlider.value, 10);
-    tandemOutput.textContent = parseInt(tandemSlider.value, 10);
+    cylinderOutput.textContent = parseInt(cylinderSlider.value, 10);
     pulseAmpValue.textContent = parseFloat(pulseAmpSlider.value).toFixed(2);
     pulseFreqValue.textContent = parseFloat(pulseFreqSlider.value).toFixed(3);
 

@@ -64,10 +64,14 @@ export function initField(sim, u0 = sim.params.u0, solid = sim.solid) {
     if (solid && solid[n]) {
       sim.ux[n] = 0.0;
       sim.uy[n] = 0.0;
+    } else if (sim.params?.bodyType === "lid-driven-cavity") {
+      sim.ux[n] = 0.0;
+      sim.uy[n] = 0.0;
     } else {
       sim.ux[n] = u0;
       sim.uy[n] = 0.0;
     }
+
   }
 
   for (let n = 0; n < sim.N; n++) {
@@ -129,9 +133,10 @@ export function createSimInstance(options = {}) {
     NY = 128,
 
     id = "sim",
-    bodyType = "airfoil",
+   bodyType = "airfoil",
     aoaDeg = 10,
     nozzleDiameter = 16,
+    cylinderDiameter = 32,
     u0 = 0.1732,
     reynolds = 5000,
 
@@ -232,12 +237,13 @@ export function createSimInstance(options = {}) {
     // -----------------------------------------------------
     // Parameter state
     // -----------------------------------------------------
-    params: {
+   params: {
       u0,
       reynolds,
       bodyType,
       aoaDeg,
       nozzleDiameter,
+      cylinderDiameter,
     },
 
     // -----------------------------------------------------
