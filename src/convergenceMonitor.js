@@ -18,6 +18,9 @@
 
 const DEFAULT_SAMPLE_EVERY_FRAMES = 1;
 const DEFAULT_MAX_HISTORY = 600;
+const DEFAULT_FORCE_STATS_WINDOW = 240;
+const DEFAULT_ST_CROSSING_HISTORY = 12;
+
 
 // ---------------------------------------------------------
 // Metric registry
@@ -72,54 +75,21 @@ const METRICS = {
     },
   },
 
-   st: {
+    st: {
     label: "St",
     color: "#7fffd4",
-    compute(sim, ctx, state, history) {
+    compute(sim, ctx, state) {
       const type = sim?.params?.bodyType;
       if (type !== "cylinder" && type !== "square-cylinder") return 0.0;
 
-      const clHist = history.cl;
-      const stepHist = history.step;
-      const n = clHist.length;
+      const steps = state.stTracker.crossingSteps;
+      if (!steps || steps.length < 2) return 0.0;
 
-      if (n < 40) return 0.0;
+      const firstStep = steps[0];
+      const lastStep = steps[steps.length - 1];
+      if (lastStep <= firstStep) return 0.0;
 
-      const start = Math.max(0, n - 240);
-
-      let mean = 0.0;
-      let count = 0;
-      for (let i = start; i < n; i++) {
-        mean += clHist[i];
-        count++;
-      }
-      if (count < 20) return 0.0;
-      mean /= count;
-
-      let crossings = 0;
-      let firstStep = null;
-      let lastStep = null;
-
-      let prev = clHist[start] - mean;
-
-      for (let i = start + 1; i < n; i++) {
-        const curr = clHist[i] - mean;
-
-        if (prev <= 0 && curr > 0) {
-          const step = stepHist[i];
-          if (firstStep === null) firstStep = step;
-          lastStep = step;
-          crossings++;
-        }
-
-        prev = curr;
-      }
-
-      if (crossings < 2 || firstStep === null || lastStep === null || lastStep <= firstStep) {
-        return 0.0;
-      }
-
-      const cycles = crossings - 1;
+      const cycles = steps.length - 1;
       const freq = cycles / (lastStep - firstStep);
 
       const U = Math.max(sim?.params?.u0 ?? 0.0, 1e-9);
@@ -184,7 +154,7 @@ export function createConvergenceMonitor(sim, options = {}) {
       ? options.maxHistory
       : DEFAULT_MAX_HISTORY;
 
-  const state = {
+ const state = {
     hasPrevSample: false,
     prevUx: new Float32Array(sim.N),
     prevUy: new Float32Array(sim.N),
@@ -194,7 +164,14 @@ export function createConvergenceMonitor(sim, options = {}) {
     ctx: null,
     dpr: 1,
     mode: "convergence",
+    stTracker: {
+      clMeanEma: 0.0,
+      hasPrev: false,
+      prevCenteredCl: 0.0,
+      crossingSteps: [],
+    },
   };
+
 
  const history = {
     frame: [],
@@ -267,9 +244,13 @@ function activeMetricKeys() {
    history.cd.push(METRICS.cd.compute(sim));
     history.cl.push(METRICS.cl.compute(sim));
     history.cm.push(METRICS.cm.compute(sim));
-    history.st.push(METRICS.st.compute(sim, ctx, state, history));
+
+    updateStTracker(sim, state);
+    history.st.push(METRICS.st.compute(sim, ctx, state));
+
     history.uCenter.push(METRICS.uCenter.compute(sim));
     history.vCenter.push(METRICS.vCenter.compute(sim));
+
 
 
 
@@ -277,11 +258,16 @@ function activeMetricKeys() {
     trimHistory(history, maxHistory);
   }
 
-  function reset() {
+ function reset() {
     state.hasPrevSample = false;
     state.lastSampledFrame = -1;
     state.prevUx.fill(0);
     state.prevUy.fill(0);
+
+    state.stTracker.clMeanEma = 0.0;
+    state.stTracker.hasPrev = false;
+    state.stTracker.prevCenteredCl = 0.0;
+    state.stTracker.crossingSteps.length = 0;
 
     for (const key in history) {
       history[key].length = 0;
@@ -289,6 +275,7 @@ function activeMetricKeys() {
 
     clearCanvas();
   }
+
 
   function attachCanvas(canvas) {
     state.canvas = canvas;
@@ -497,37 +484,30 @@ function activeMetricKeys() {
     } 
 
   // ---- coefficient + raw force readout — top right corner ----
-    if (state.mode === "forces" && history.cd.length > 0 && history.cl.length > 0) {
-      const lastCd = history.cd[history.cd.length - 1];
-      const lastCl = history.cl[history.cl.length - 1];
-      const lastCm = history.cm.length > 0 ? history.cm[history.cm.length - 1] : null;
-      const ratio  = Math.abs(lastCd) > 1e-6 ? lastCl / lastCd : 0;
-      const lastSt = history.st.length > 0 ? history.st[history.st.length - 1] : null;
+   if (state.mode === "forces" && history.cd.length > 0 && history.cl.length > 0) {
       const showSt = sim?.params?.bodyType === "cylinder" || sim?.params?.bodyType === "square-cylinder";
       const isCavity = sim?.params?.bodyType === "lid-driven-cavity";
-
-
-
-      const fx = sim.force?.fx ?? 0.0;
-      const fy = sim.force?.fy ?? 0.0;
-      const mz = sim.force?.mz ?? 0.0;
 
       ctx.font = '500 9px "JetBrains Mono", monospace';
       ctx.textAlign = 'right';
 
       if (isCavity) {
-        const lastU = history.uCenter.length > 0 ? history.uCenter[history.uCenter.length - 1] : 0.0;
-        const lastV = history.vCenter.length > 0 ? history.vCenter[history.vCenter.length - 1] : 0.0;
+        const uStats = waveStats(history.uCenter);
+        const vStats = waveStats(history.vCenter);
 
         const lines = [
-          { label: "Ucenter", val: lastU, color: METRICS.uCenter.color },
-          { label: "Vcenter", val: lastV, color: METRICS.vCenter.color },
+          { label: "<Ucenter>", mean: uStats.mean, amp: uStats.amp, color: METRICS.uCenter.color },
+          { label: "<Vcenter>", mean: vStats.mean, amp: vStats.amp, color: METRICS.vCenter.color },
         ];
 
         let ry = top + 10;
         for (const line of lines) {
           ctx.fillStyle = line.color;
-          ctx.fillText(`${line.label}: ${line.val.toFixed(4)}`, right - 2, ry);
+          ctx.fillText(
+            `${line.label}: ${line.mean.toFixed(4)} ± ${line.amp.toFixed(4)}`,
+            right - 2,
+            ry
+          );
           ry += 12;
         }
 
@@ -536,37 +516,46 @@ function activeMetricKeys() {
         return;
       }
 
+      const cdStats = waveStats(history.cd);
+      const clStats = waveStats(history.cl);
+      const cmStats = waveStats(history.cm);
+      const stStats = waveStats(history.st);
 
-     const lines = [
-        { label: "Cd", val: lastCd, color: METRICS.cd.color },
-        { label: "Cl", val: lastCl, color: METRICS.cl.color },
+      const ratio = Math.abs(cdStats.mean) > 1e-6 ? clStats.mean / cdStats.mean : 0.0;
+
+      const lines = [
+        { label: "<Cd>", mean: cdStats.mean, amp: cdStats.amp, color: METRICS.cd.color },
+        { label: "<Cl>", mean: clStats.mean, amp: clStats.amp, color: METRICS.cl.color },
       ];
 
-      if (lastCm !== null && shouldShowMoment(sim)) {
-        lines.push({ label: "Cm", val: lastCm, color: METRICS.cm.color });
+      if (shouldShowMoment(sim)) {
+        lines.push({ label: "<Cm>", mean: cmStats.mean, amp: cmStats.amp, color: METRICS.cm.color });
       }
 
-      if (showSt && lastSt !== null) {
-        lines.push({ label: "St", val: lastSt, color: METRICS.st.color });
+     if (showSt) {
+        lines.push({ label: "St", mean: stStats.mean, amp: null, color: METRICS.st.color });
       }
+
 
       lines.push(
-        { label: "Cl/Cd", val: ratio, color: "#ffffff" },
-        // { label: "Fx", val: fx, color: "#7fdfff" },
-        // { label: "Fy", val: fy, color: "#ffd08a" },
-        // { label: "Mz", val: mz, color: "#dcb0ff" },
+        { label: "Cl/Cd", mean: ratio, amp: null, color: "#ffffff" },
       );
-
 
       let ry = top + 10;
       for (const line of lines) {
         ctx.fillStyle = line.color;
-        ctx.fillText(`${line.label}: ${line.val.toFixed(4)}`, right - 2, ry);
+
+        const text = line.amp === null
+          ? `${line.label}: ${line.mean.toFixed(4)}`
+          : `${line.label}: ${line.mean.toFixed(4)} ± ${line.amp.toFixed(4)}`;
+
+        ctx.fillText(text, right - 2, ry);
         ry += 12;
       }
 
-      ctx.textAlign = "left"; // reset
+      ctx.textAlign = "left";
     }
+
 
 
 
@@ -663,3 +652,73 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y, x + w, y, rr);
   ctx.closePath();
 } 
+
+function recentWindow(arr, n) {
+  if (!arr || arr.length === 0) return [];
+  return arr.slice(Math.max(0, arr.length - n));
+}
+
+function meanOf(arr) {
+  if (!arr || arr.length === 0) return 0.0;
+  let s = 0.0;
+  for (let i = 0; i < arr.length; i++) s += arr[i];
+  return s / arr.length;
+}
+
+function minOf(arr) {
+  if (!arr || arr.length === 0) return 0.0;
+  let m = arr[0];
+  for (let i = 1; i < arr.length; i++) if (arr[i] < m) m = arr[i];
+  return m;
+}
+
+function maxOf(arr) {
+  if (!arr || arr.length === 0) return 0.0;
+  let m = arr[0];
+  for (let i = 1; i < arr.length; i++) if (arr[i] > m) m = arr[i];
+  return m;
+}
+
+function waveStats(arr, windowSize = DEFAULT_FORCE_STATS_WINDOW) {
+  const win = recentWindow(arr, windowSize);
+  if (win.length === 0) {
+    return { mean: 0.0, min: 0.0, max: 0.0, amp: 0.0 };
+  }
+
+  const mean = meanOf(win);
+  const min = minOf(win);
+  const max = maxOf(win);
+  const amp = Math.max(Math.abs(max - mean), Math.abs(mean - min));
+
+  return { mean, min, max, amp };
+}
+
+function updateStTracker(sim, state) {
+  const type = sim?.params?.bodyType;
+  if (type !== "cylinder" && type !== "square-cylinder") return;
+
+  const tracker = state.stTracker;
+  const cl = sim.coeff?.cl ?? 0.0;
+  const step = sim.runtime?.stepCount ?? 0;
+
+  // Slow running mean estimate to center the oscillation
+  tracker.clMeanEma = tracker.hasPrev
+    ? 0.98 * tracker.clMeanEma + 0.02 * cl
+    : cl;
+
+  const centeredCl = cl - tracker.clMeanEma;
+
+  if (tracker.hasPrev) {
+    // Upward zero crossing only
+    if (tracker.prevCenteredCl <= 0.0 && centeredCl > 0.0) {
+      tracker.crossingSteps.push(step);
+
+      if (tracker.crossingSteps.length > DEFAULT_ST_CROSSING_HISTORY) {
+        tracker.crossingSteps.shift();
+      }
+    }
+  }
+
+  tracker.prevCenteredCl = centeredCl;
+  tracker.hasPrev = true;
+}

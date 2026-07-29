@@ -33,19 +33,50 @@ function sdfNACA2412(cx, cy, chord, alpha) {
   return sdfNACA4(cx, cy, chord, alpha, 0.02, 0.4, 0.12);
 }
 
-function sdfLidDrivenCavity(NX, NY, wallThickness = 1) {
+function sdfLidDrivenCavity(NX, NY, wallThickness = 1, cavityAspect = 1.0) {
+  const outerLeft   = wallThickness;
+  const outerRight  = NX - 1 - wallThickness;
+  const outerBottom = wallThickness;
+  const outerTop    = NY - 1 - wallThickness;
+
+  // Center cavity height stays fixed by NY
+  const cavityHeight = (outerTop - outerBottom) + 1 - 2 * wallThickness;
+
+  // Width changes with aspect ratio; 1.0 gives square center cavity
+  const cavityWidth = Math.max(
+    4,
+    Math.round(cavityHeight * cavityAspect)
+  );
+
+  const midX = 0.5 * (outerLeft + outerRight);
+  const cavityLeftInner  = Math.round(midX - cavityWidth / 2);
+  const cavityRightInner = Math.round(midX + cavityWidth / 2);
+
   return (x, y) => {
-    const left   = x - wallThickness;
-    const right  = (NX - 1 - wallThickness) - x;
-    const bottom = y - wallThickness;
-    const top    = (NY - 1 - wallThickness) - y;
+    // Outer box walls
+    const inOuterFluid =
+      x >= outerLeft && x <= outerRight &&
+      y >= outerBottom && y <= outerTop;
 
-    const minDistToInnerBox = Math.min(left, right, bottom, top);
+    if (!inOuterFluid) return -1.0;
 
-    // Solid walls, fluid interior
-    return minDistToInnerBox;
+    // Top and bottom are continuous walls across full width
+    if (y <= outerBottom || y >= outerTop) return -1.0;
+
+    // Left and right outer walls
+    if (x <= outerLeft || x >= outerRight) return -1.0;
+
+    // Two inner vertical walls that define the center cavity
+    const inCenterBand = x >= cavityLeftInner && x <= cavityRightInner;
+
+    // Fluid everywhere except the wall columns themselves
+    if (x === cavityLeftInner || x === cavityRightInner) return -1.0;
+
+    // Interior fluid in all three compartments
+    return 1.0;
   };
 }
+
 
 
 // ---------------------------------------------------------
@@ -300,16 +331,43 @@ export function buildSquareCylinder(dims, cx, cy, size, alpha) {
 // ---------------------------------------------------------
 // buildLidDrivenCavity(dims)
 // ---------------------------------------------------------
-export function buildLidDrivenCavity(dims) {
+export function buildLidDrivenCavity(dims, cavityAspect = 1.0) {
   const { NX, NY } = dims;
   const wallThickness = 1;
 
+  const outerLeft   = wallThickness;
+  const outerRight  = NX - 1 - wallThickness;
+  const outerBottom = wallThickness;
+  const outerTop    = NY - 1 - wallThickness;
+
+  // Full interior height between top and bottom walls
+  const cavityHeight = (outerTop - outerBottom) + 1 - 2 * wallThickness;
+
+  // Center cavity width set by aspect ratio
+  const cavityWidth = Math.max(4, Math.round(cavityHeight * cavityAspect));
+
+  const midX = 0.5 * (outerLeft + outerRight);
+  const cavityLeftInner  = Math.round(midX - cavityWidth / 2);
+  const cavityRightInner = Math.round(midX + cavityWidth / 2);
+
+  // Characteristic length = center cavity interior width
+  const centerCavityLength = (cavityRightInner - cavityLeftInner) - 1;
+
   return {
-    geometry: buildGeometryFromSDF(dims, sdfLidDrivenCavity(NX, NY, wallThickness)),
+    geometry: buildGeometryFromSDF(
+      dims,
+      sdfLidDrivenCavity(NX, NY, wallThickness, cavityAspect)
+    ),
     wallThickness,
-    charLength: NY - 2 * wallThickness,
+    cavityAspect,
+    cavityWidth,
+    cavityHeight,
+    cavityLeftInner,
+    cavityRightInner,
+    charLength: centerCavityLength,
   };
 }
+
 
 
 export function buildEmpty(dims) {
@@ -393,8 +451,9 @@ export function defaultSquareCylinder(dims) {
 // defaultLidDrivenCavity(dims)
 // ---------------------------------------------------------
 export function defaultLidDrivenCavity(dims) {
-  return buildLidDrivenCavity(dims);
+  return buildLidDrivenCavity(dims, 1.0);
 }
+
 
 
 export function buildNozzle(dims, cy, diameter) {

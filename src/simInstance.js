@@ -137,6 +137,7 @@ export function createSimInstance(options = {}) {
     aoaDeg = 10,
     nozzleDiameter = 16,
     cylinderDiameter = 32,
+    cavityAspect = 1.0,
     u0 = 0.1732,
     reynolds = 5000,
 
@@ -244,6 +245,7 @@ export function createSimInstance(options = {}) {
       aoaDeg,
       nozzleDiameter,
       cylinderDiameter,
+      cavityAspect,
     },
 
     // -----------------------------------------------------

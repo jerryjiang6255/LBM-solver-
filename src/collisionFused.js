@@ -29,7 +29,7 @@ const Y_MIN      = 0.5;
 const U_CAP   = 0.28;
 const RHO_MIN = 0.35;
 const RHO_MAX = 3.0;
-const TAU_MIN = 0.55;
+const TAU_MIN = 0.545;
 const TAU_MAX = 5.0;
 
 // ---------------------------------------------------------

@@ -45,41 +45,75 @@ export class BodyRenderer {
     // -----------------------------------------------------
     } else if (params.type === "lid-driven-cavity") {
       const wallThickness = params.wallThickness ?? 1;
+      const cavityAspect = params.cavityAspect ?? 1.0;
 
-      // Make the visual wall noticeably thicker than the raw lattice wall
-      const tX = Math.max(wallThickness * sx, 18);
-      const tY = Math.max(wallThickness * sy, 18);
+      // Match geometry.js logic
+      const outerLeft   = wallThickness;
+      const outerRight  = this.NX - 1 - wallThickness;
+      const outerBottom = wallThickness;
+      const outerTop    = this.NY - 1 - wallThickness;
 
-      const outerX = 0;
-      const outerY = 0;
-      const outerW = Wc;
-      const outerH = Hc;
+      const cavityHeight = (outerTop - outerBottom) + 1 - 2 * wallThickness;
+      const cavityWidth = Math.max(4, Math.round(cavityHeight * cavityAspect));
 
-      const innerX = tX;
-      const innerY = tY;
-      const innerW = Wc - 2 * tX;
-      const innerH = Hc - 2 * tY;
+      const midX = 0.5 * (outerLeft + outerRight);
+      const cavityLeftInner  = Math.round(midX - cavityWidth / 2);
+      const cavityRightInner = Math.round(midX + cavityWidth / 2);
 
-      const r = Math.max(0.1, Math.min(innerW, innerH) * 0.01);
+      // Visual thickness bigger than lattice thickness so it fully covers the masked geometry
+      const tX = Math.max(wallThickness * sx, 14);
+      const tY = Math.max(wallThickness * sy, 14);
 
-      // Single compound path: outer rect minus rounded inner opening
+      // Full outer cavity body
+      const outerX = outerLeft * sx;
+      const outerY = outerBottom * sy;
+      const outerW = (outerRight - outerLeft + 1) * sx;
+      const outerH = (outerTop - outerBottom + 1) * sy;
+
+      // Inner fluid opening for the full cavity
+      const innerX = outerX + tX;
+      const innerY = outerY + tY;
+      const innerW = outerW - 2 * tX;
+      const innerH = outerH - 2 * tY;
+
+      // Internal wall positions
+      const wall1X = cavityLeftInner * sx;
+      const wall2X = cavityRightInner * sx;
+      const wallW = Math.max(wallThickness * sx, 12);
+
+      const rOuter = Math.max(8, Math.min(outerW, outerH) * 0.025);
+      const rInner = Math.max(6, Math.min(innerW, innerH) * 0.02);
+
+      // One compound path:
+      // outer rounded box
+      // minus inner rounded cavity opening
+      // plus the two solid internal walls
       ctx.beginPath();
-      ctx.rect(outerX, outerY, outerW, outerH);
-      ctx.roundRect(innerX, innerY, innerW, innerH, r);
+      ctx.roundRect(outerX, outerY, outerW, outerH, rOuter);
+      ctx.roundRect(innerX, innerY, innerW, innerH, rInner);
+      ctx.rect(wall1X - 0.5 * wallW, innerY, wallW, innerH);
+      ctx.rect(wall2X - 0.5 * wallW, innerY, wallW, innerH);
 
-      ctx.fillStyle = "#1a1f2e";
+      const grad = ctx.createLinearGradient(0, outerY, 0, outerY + outerH);
+      grad.addColorStop(0.0, "#48506a");
+      grad.addColorStop(0.45, "#1a1f2e");
+      grad.addColorStop(1.0, "#0a0d16");
+
+      ctx.fillStyle = grad;
       ctx.fill("evenodd");
 
-      // Outer outline
+      // Single clean outer outline
+      ctx.beginPath();
+      ctx.roundRect(outerX + 0.5, outerY + 0.5, outerW - 1, outerH - 1, rOuter);
       ctx.strokeStyle = "rgba(175,198,230,0.78)";
       ctx.lineWidth = 1.4;
-      ctx.strokeRect(0.5, 0.5, Wc - 1, Hc - 1);
+      ctx.stroke();
 
-      // Inner rounded outline
+      // Inner opening outline only
       ctx.beginPath();
-      ctx.roundRect(innerX + 0.5, innerY + 0.5, innerW - 1, innerH - 1, r);
-      ctx.strokeStyle = "rgba(175,198,230,0.55)";
-      ctx.lineWidth = 1.2;
+      ctx.roundRect(innerX + 0.5, innerY + 0.5, innerW - 1, innerH - 1, rInner);
+      ctx.strokeStyle = "rgba(175,198,230,0.40)";
+      ctx.lineWidth = 1.1;
       ctx.stroke();
 
     // -----------------------------------------------------

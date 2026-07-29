@@ -105,13 +105,21 @@
             <input type="range" id="cylinder-slider" class="control-slider" min="8" max="96" step="2" value="32">
           </div>
 
-
-          <div class="slider-row" id="cavity-row" style="display:none">
+          <div class="slider-row" id="cavity-aspect-row" style="display:none">
             <label>
-              <span>Lid speed control</span>
-              <output id="cavity-value">Uses velocity slider</output>
+              <span>Cavity aspect</span>
+              <output id="cavity-aspect-value">1.00</output>
             </label>
-          </div>
+            <input
+              type="range"
+              id="cavity-aspect-slider"
+              class="control-slider"
+              min="0.50"
+              max="2.00"
+              step="0.05"
+              value="1.00"
+            >
+          </div>    
         </div>
 
         <!-- Flow -->
@@ -419,6 +427,11 @@
     let convergenceVisible = false;
     let lastTargetedFlow = 1;
 
+    const TAU_MIN_UI = 0.545;
+    const TAU_MAX_UI = 5.0;
+    const RE_STEP = 10;
+
+
     // =====================================================
     // Cached DOM refs
     // =====================================================
@@ -459,6 +472,11 @@
     const clearBtn = document.getElementById("clear-btn");
     const pauseBtn = document.getElementById("pause-btn");
     const tooltip = document.getElementById("tooltip");
+
+    const cavityAspectRow = document.getElementById("cavity-aspect-row");
+    const cavityAspectSlider = document.getElementById("cavity-aspect-slider");
+    const cavityAspectValue = document.getElementById("cavity-aspect-value");
+
 
     // =====================================================
     // UI groups / mappings
@@ -549,11 +567,13 @@
       "aoa-slider",
       "nozzle-slider",
       "cylinder-slider",
+      "cavity-aspect-slider",
       "u0-slider",
       "pulse-amp-slider",
       "pulse-freq-slider",
       "re-slider"
     ];
+
 
 
     const DISPLAY_GLOBAL_BUTTONS = [
@@ -596,6 +616,103 @@
     function currentDims() {
       return GRID_PRESETS[currentGridKey];
     }
+
+    function getCharacteristicLengthForBody(simLike) {
+      const { NX, NY } = currentDims();
+      const bodyType = simLike?.params?.bodyType ?? "airfoil";
+
+      if (bodyType === "airfoil" || bodyType === "naca2412") {
+        return Math.floor(NX / 3);
+      }
+
+      if (bodyType === "cylinder") {
+        const diameter = simLike?.params?.cylinderDiameter ?? parseInt(document.getElementById("cylinder-slider")?.value || "32", 10);
+        return diameter;
+      }
+
+      if (bodyType === "square-cylinder") {
+        return Math.max(8, Math.floor(NY / 4));
+      }
+
+    if (bodyType === "lid-driven-cavity") {
+        const wallThickness = 1;
+        const cavityAspect = simLike?.params?.cavityAspect ?? parseFloat(cavityAspectSlider.value);
+
+        const outerLeft   = wallThickness;
+        const outerRight  = NX - 1 - wallThickness;
+        const outerBottom = wallThickness;
+        const outerTop    = NY - 1 - wallThickness;
+
+        const cavityHeight = (outerTop - outerBottom) + 1 - 2 * wallThickness;
+        const cavityWidth = Math.max(4, Math.round(cavityHeight * cavityAspect));
+
+        const midX = 0.5 * (outerLeft + outerRight);
+        const cavityLeftInner  = Math.round(midX - cavityWidth / 2);
+        const cavityRightInner = Math.round(midX + cavityWidth / 2);
+
+        return (cavityRightInner - cavityLeftInner) - 1;
+      }
+
+      if (bodyType === "nozzle") {
+        return simLike?.params?.nozzleDiameter ?? parseInt(nozzleSlider.value, 10);
+      }
+
+      if (bodyType === "blocks") {
+        return 16;
+      }
+
+      return Math.max(4, Math.floor(NY / 8)) * 2;
+    }
+
+    function computeReBounds(u0, L) {
+      const nuMin = (TAU_MIN_UI - 0.5) / 3.0;
+      const nuMax = (TAU_MAX_UI - 0.5) / 3.0;
+
+      const reMaxRaw = (u0 * L) / nuMin;
+      const reMinRaw = (u0 * L) / nuMax;
+
+      const reMin = Math.max(RE_STEP, Math.ceil(reMinRaw / RE_STEP) * RE_STEP);
+      const reMax = Math.max(reMin, Math.floor(reMaxRaw / RE_STEP) * RE_STEP);
+
+      return { reMin, reMax };
+    }
+
+    function activeReferenceSim() {
+      const mode = activeTargetMode();
+      let refSim = sim1;
+      if (compareMode && mode === "flow2" && sim2) refSim = sim2;
+      if (compareMode && mode === "both" && lastTargetedFlow === 2 && sim2) refSim = sim2;
+      return refSim;
+    }
+
+    function updateReSliderBounds() {
+      const reSlider = document.getElementById("re-slider");
+      const refSim = activeReferenceSim();
+
+      const u0 = refSim?.params?.u0 ?? parseFloat(document.getElementById("u0-slider").value);
+      const L = getCharacteristicLengthForBody(refSim);
+
+      const { reMin, reMax } = computeReBounds(u0, L);
+
+      reSlider.min = String(reMin);
+      reSlider.max = String(reMax);
+      reSlider.step = String(RE_STEP);
+
+      let current = parseFloat(reSlider.value);
+      if (!Number.isFinite(current)) current = reMin;
+      current = Math.min(reMax, Math.max(reMin, current));
+      current = Math.round(current / RE_STEP) * RE_STEP;
+      current = Math.min(reMax, Math.max(reMin, current));
+
+      reSlider.value = String(current);
+      document.getElementById("re-value").textContent = current.toFixed(0);
+
+      targetedSims().forEach(sim => {
+        sim.params.reynolds = current;
+        setReynolds(sim, current);
+      });
+    }
+
 
     function updateGridStats() {
       const { NX, NY } = currentDims();
@@ -747,9 +864,14 @@
             getValue(sim) { return sim?.params?.nozzleDiameter ?? 16; },
             setValueText(v) { nozzleOutput.textContent = `${Math.round(v)}`; },
           };
+        
+        case "cavity-aspect-slider":
+          return {
+            getValue(sim) { return sim?.params?.cavityAspect ?? 1.0; },
+            setValueText(v) { cavityAspectValue.textContent = Number(v).toFixed(2); },
+          };
 
-
-       case "u0-slider":
+        case "u0-slider":
           return {
             getValue(sim) { return sim?.params?.u0 ?? 0.1732; },
             setValueText(v) {
@@ -758,11 +880,11 @@
             },
           };
 
-          case "cylinder-slider":
-            return {
-              getValue(sim) { return sim?.params?.cylinderDiameter ?? 32; },
-              setValueText(v) { cylinderOutput.textContent = `${Math.round(v)}`; },
-            };
+        case "cylinder-slider":
+          return {
+            getValue(sim) { return sim?.params?.cylinderDiameter ?? 32; },
+            setValueText(v) { cylinderOutput.textContent = `${Math.round(v)}`; },
+          };
 
         case "pulse-amp-slider":
           return {
@@ -870,11 +992,19 @@
 
     function updateBodyRows(type) {
       const aoaBodies = new Set(["airfoil", "naca2412", "square-cylinder"]);
-      aoaRow.style.display = aoaBodies.has(type) ? "" : "none";
-      nozzleRow.style.display = type === "nozzle" ? "" : "none";
-      cylinderRow.style.display = type === "cylinder" ? "" : "none";
-      cavityRow.style.display = type === "lid-driven-cavity" ? "" : "none";
+
+      if (aoaRow) aoaRow.style.display = aoaBodies.has(type) ? "" : "none";
+      if (nozzleRow) nozzleRow.style.display = type === "nozzle" ? "" : "none";
+      if (typeof cylinderRow !== "undefined" && cylinderRow) {
+        cylinderRow.style.display = type === "cylinder" ? "" : "none";
+      }
+      if (cavityRow) cavityRow.style.display = type === "lid-driven-cavity" ? "" : "none";
+      if (typeof cavityAspectRow !== "undefined" && cavityAspectRow) {
+        cavityAspectRow.style.display = type === "lid-driven-cavity" ? "" : "none";
+      }
     }
+
+
 
 
 
@@ -892,6 +1022,9 @@
       if (compareMode && mode === "flow2" && sim2) refSim = sim2;
       if (compareMode && mode === "both" && lastTargetedFlow === 2 && sim2) refSim = sim2;
       if (refSim) updateBodyRows(refSim.params.bodyType);
+      if (refSim) updateBodyRows(refSim.params.bodyType);
+      updateReSliderBounds();
+
     }
 
     // =====================================================
@@ -1014,7 +1147,8 @@
         bodyType,
         aoaDeg,
         nozzleDiameter: overrides.nozzleDiameter ?? parseInt(nozzleSlider.value, 10),
-        cylinderDiameter: overrides.cylinderDiameter ?? parseInt(cylinderSlider.value, 10),
+        cylinderDiameter: overrides.cylinderDiameter ?? parseInt(document.getElementById("cylinder-slider")?.value || "32", 10),
+        cavityAspect: overrides.cavityAspect ?? parseFloat(cavityAspectSlider.value),
         u0: overrides.u0 ?? parseFloat(document.getElementById("u0-slider").value),
         reynolds: overrides.reynolds ?? parseFloat(document.getElementById("re-slider").value),
         displayMode: document.getElementById("mode-qcrit").classList.contains("active") ? "qcrit" : "speed",
@@ -1057,6 +1191,8 @@
           pulsationAmp: prevSim1.flow.pulsationAmp,
           pulsationFreq: prevSim1.flow.pulsationFreq,
           cylinderDiameter: prevSim1.params.cylinderDiameter,
+          cavityAspect: prevSim1.params.cavityAspect,
+
         } : {}
       );
 
@@ -1080,6 +1216,8 @@
             pulsationAmp: prevSim2.flow.pulsationAmp,
             pulsationFreq: prevSim2.flow.pulsationFreq,
             cylinderDiameter: prevSim2.params.cylinderDiameter,
+            cavityAspect: prevSim2.params.cavityAspect,
+
           } : {}
         );
 
@@ -1148,13 +1286,15 @@
       }
 
      if (bodyType === "lid-driven-cavity") {
-        const result = buildLidDrivenCavity(dims);
+        const cavityAspect = sim.params.cavityAspect ?? parseFloat(cavityAspectSlider.value);
+        const result = buildLidDrivenCavity(dims, cavityAspect);
 
         return {
           g: result.geometry,
           p: {
             type: "lid-driven-cavity",
-            wallThickness: result.wallThickness
+            wallThickness: result.wallThickness,
+            cavityAspect: result.cavityAspect
           },
           charLength: result.charLength
         };
@@ -1663,29 +1803,54 @@
       syncTargetUI();
     });
 
+    cavityAspectSlider.addEventListener("input", () => {
+      const aspect = parseFloat(cavityAspectSlider.value);
+      cavityAspectValue.textContent = aspect.toFixed(2);
+
+      targetedSims().forEach(sim => {
+        sim.params.cavityAspect = aspect;
+        if (sim.params.bodyType === "lid-driven-cavity") {
+          rebuildGeometryOnly(sim);
+        }
+      });
+
+      syncTargetUI();
+    });
+
+
 
 
    // =====================================================
     // Flow controls
     // =====================================================
-document.getElementById("u0-slider").addEventListener("input", e => {
-  const u0 = parseFloat(e.target.value);
+    document.getElementById("u0-slider").addEventListener("input", e => {
+      const u0 = parseFloat(e.target.value);
 
-  targetedSims().forEach(sim => {
-    sim.params.u0 = u0;
-  });
+      targetedSims().forEach(sim => {
+        sim.params.u0 = u0;
+      });
 
-  document.getElementById("u0-value").textContent =
-    `Ma ${(u0 / CS_LATTICE).toFixed(2)}`;
+      document.getElementById("u0-value").textContent =
+        `Ma ${(u0 / CS_LATTICE).toFixed(2)}`;
 
-  syncTargetUI();
-});
+      syncTargetUI();
+    });
 
 
 
 
     document.getElementById("re-slider").addEventListener("input", e => {
-      const reynolds = parseFloat(e.target.value);
+      let reynolds = parseFloat(e.target.value);
+
+      const reSlider = document.getElementById("re-slider");
+      const reMin = parseFloat(reSlider.min);
+      const reMax = parseFloat(reSlider.max);
+
+      reynolds = Math.min(reMax, Math.max(reMin, reynolds));
+      reynolds = Math.round(reynolds / RE_STEP) * RE_STEP;
+      reynolds = Math.min(reMax, Math.max(reMin, reynolds));
+
+      reSlider.value = String(reynolds);
       document.getElementById("re-value").textContent = reynolds.toFixed(0);
 
       targetedSims().forEach(sim => {
@@ -1695,6 +1860,7 @@ document.getElementById("u0-slider").addEventListener("input", e => {
 
       syncTargetUI();
     });
+
 
     document.getElementById("pulse-on").addEventListener("click", () => {
       targetedSims().forEach(sim => {
@@ -1960,6 +2126,8 @@ document.getElementById("u0-value").textContent =
     cylinderOutput.textContent = parseInt(cylinderSlider.value, 10);
     pulseAmpValue.textContent = parseFloat(pulseAmpSlider.value).toFixed(2);
     pulseFreqValue.textContent = parseFloat(pulseFreqSlider.value).toFixed(3);
+    cavityAspectValue.textContent = parseFloat(cavityAspectSlider.value).toFixed(2);
+
 
     updateGridStats();
     setActiveBtn(modeGroup, "mode-speed");
