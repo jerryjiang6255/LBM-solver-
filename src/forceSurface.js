@@ -34,7 +34,8 @@
 //   catastrophic floating-point cancellation.
 //
 // Requires:
-//   sim.fSnapshot  — f captured BEFORE streamInPlace each timestep
+//   sim.fSnapshot  — post-streaming f, captured in streaming.js applyBFL()
+//                    before the BFL wall reconstruction overwrites links
 //   sim.sdf        — signed distance field from geometry builder
 //   sim.RHO0       — background density (default 1.0)
 // ============================================================
@@ -159,11 +160,19 @@ function momentumExchange(sim) {
 // Scaling
 // ---------------------------------------------------------
 function getScaling(sim) {
-  const rho0        = sim.RHO0       ?? 1.0;
-  const U           = sim.U0         ?? sim.uInlet ?? 0.1;
-  const L           = sim.charLength ?? sim.L      ?? 1.0;
-  const forceScale  = sim.forceScale  ?? (0.5 * rho0 * U * U * L);
-  const momentScale = sim.momentScale ?? (forceScale * L);
+  // Dynamic pressure uses the CURRENT reference inlet velocity so the
+  // coefficients stay correct when the inlet-velocity slider moves.
+  // (Pulsation is deliberately excluded: u0 is the mean reference speed.)
+  const rho0        = sim.RHO0 ?? 1.0;
+  const U           = sim.params?.u0 ?? sim.U0 ?? 0.1;
+  const L           = sim.forceRefLength ?? sim.L ?? 1.0;
+  const qDyn        = 0.5 * rho0 * U * U;
+  const forceScale  = qDyn * L;
+  const momentScale = qDyn * L * L;
+
+  sim.forceScale  = forceScale;
+  sim.momentScale = momentScale;
+
   return { rho0, U, L, forceScale, momentScale };
 }
 

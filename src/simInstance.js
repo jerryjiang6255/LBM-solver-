@@ -327,8 +327,9 @@ export function createSimInstance(options = {}) {
     // - cl: lift coefficient
     // - cm: moment coefficient
     //
-    // forceScale and momentScale are set elsewhere
-    // (typically when geometry/reference quantities are applied).
+    // forceRefLength is set when geometry is applied; forceScale and
+    // momentScale are recomputed each step in forceSurface.js from the
+    // live inlet velocity.
     // -----------------------------------------------------
     coeff: {
       cd: 0.0,
@@ -336,6 +337,7 @@ export function createSimInstance(options = {}) {
       cm: 0.0,
     },
 
+    forceRefLength: 1.0,
     forceScale: 1.0,
     momentScale: 1.0,
 
