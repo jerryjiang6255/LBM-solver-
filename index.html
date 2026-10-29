@@ -388,7 +388,7 @@
     import { createUserDraw } from "./src/userDraw.js";
     import { createConvergenceMonitor } from "./src/convergenceMonitor.js";
     import { createParticles } from "./src/particles.js";
-    import { computeSurfaceForces, debugPressureDistribution } from "./src/forceSurface.js";
+    import { computeSurfaceForces } from "./src/forceSurface.js";
     import {
       buildAirfoil,
       buildNACA2412,
@@ -1363,66 +1363,57 @@
       sim.linkMask = g.linkMask;
       sim.linkQ = g.linkQ;
       sim.solidList = g.solidList;
-      sim.fluidSurfaceList = g.fluidSurfaceList; 
+      sim.fluidSurfaceList = g.fluidSurfaceList;
 
-     // ---------------------------------------------------
-      // Force reference / coefficient scaling
+      // Signed distance field: needed by forceSurface.js to estimate the
+      // local body normal used by the normal-filtered momentum exchange.
+      sim.sdf = g.sdf;
+
       // ---------------------------------------------------
-      const rhoRef = sim.RHO0 ?? 1.0;
-      const uRef = sim.params.u0 ?? 1.0;
-      const qDyn = 0.5 * rhoRef * uRef * uRef;
+      // Force reference point / coefficient reference length
+      // ---------------------------------------------------
+      // The dynamic pressure 0.5*rho*u0^2 is evaluated live in
+      // forceSurface.js from the current inlet velocity, so only the
+      // reference length is fixed here.
+      let refLength;
 
       if (p.type === "airfoil" || p.type === "naca2412") {
         sim.forceRef.x = p.cx - p.chord / 4;
         sim.forceRef.y = p.cy;
-
-        sim.forceScale = qDyn * p.chord;
-        sim.momentScale = qDyn * p.chord * p.chord;
+        refLength = p.chord;
 
       } else if (p.type === "cylinder") {
-        const d = 2 * p.radius;
         sim.forceRef.x = p.cx;
         sim.forceRef.y = p.cy;
-
-        sim.forceScale = qDyn * d;
-        sim.momentScale = qDyn * d * d;
+        refLength = 2 * p.radius;
 
       } else if (p.type === "square-cylinder") {
         sim.forceRef.x = p.cx;
         sim.forceRef.y = p.cy;
+        refLength = p.size;
 
-        sim.forceScale = qDyn * p.size;
-        sim.momentScale = qDyn * p.size * p.size;
-
-     } else if (p.type === "lid-driven-cavity") {
+      } else if (p.type === "lid-driven-cavity") {
         sim.forceRef.x = sim.NX * 0.5;
         sim.forceRef.y = sim.NY * 0.5;
-
-        sim.forceScale = qDyn * (charLength || sim.L || 1.0);
-        sim.momentScale = qDyn * Math.pow(charLength || sim.L || 1.0, 2);
-
+        refLength = charLength || sim.L || 1.0;
 
       } else if (p.type === "nozzle") {
         sim.forceRef.x = p.length * 0.5;
         sim.forceRef.y = p.cy;
-
-        sim.forceScale = qDyn * p.diameter;
-        sim.momentScale = qDyn * p.diameter * p.diameter;
+        refLength = p.diameter;
 
       } else if (p.type === "blocks") {
         sim.forceRef.x = sim.NX * 0.5;
         sim.forceRef.y = sim.NY * 0.5;
-
-        sim.forceScale = qDyn * (charLength || sim.L || 1.0);
-        sim.momentScale = qDyn * Math.pow(charLength || sim.L || 1.0, 2);
+        refLength = charLength || sim.L || 1.0;
 
       } else {
         sim.forceRef.x = 0.0;
         sim.forceRef.y = 0.0;
-
-        sim.forceScale = qDyn * Math.max(charLength || sim.L || 1.0, 1.0);
-        sim.momentScale = qDyn * Math.pow(Math.max(charLength || sim.L || 1.0, 1.0), 2);
+        refLength = Math.max(charLength || sim.L || 1.0, 1.0);
       }
+
+      sim.forceRefLength = refLength;
 
       if (sim.bodyRenderer) {
         sim.bodyRenderer.clear();
@@ -1551,10 +1542,6 @@
     // Solver loop
     // =====================================================
     function stepOnce(sim) {
-      if ((sim.runtime.stepCount ?? 0) % 200 === 0) {
-  debugPressureDistribution(sim);
-}
-
       if (!sim || !sim.solid || !sim.userDraw) return;
 
       const inletU = getInletVelocity(sim);
