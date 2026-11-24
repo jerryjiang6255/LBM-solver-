@@ -14,6 +14,9 @@ import { CX, CY, OPP } from "./lbm.js";
 // stream(sim)
 // ---------------------------------------------------------
 export function stream(sim) {
+  // Keep the post-collision field: BFL and the force both need f*,
+  // and streamInPlace overwrites it (the GPU reads the same values from fB).
+  if (sim.fSnapshot) sim.fSnapshot.set(sim.f);
   streamInPlace(sim);
   applyBFL(sim);
   bounceBackNodes(sim);
@@ -69,17 +72,21 @@ function streamInPlace(sim) {
 // ---------------------------------------------------------
 // applyBFL(sim)
 // ---------------------------------------------------------
-// Applies interpolated BFL wall reconstruction on blocked
-// fluid-solid links. No force accumulation is performed here.
+// BFL (Bouzidi) interpolated bounce-back, same logic as the GPU
+// stream_main. Link i at a fluid node x means x + c_i is solid and the
+// wall sits a fraction q along c_i. After streaming, slot i at x is
+// known (it came from the fluid side) and is left alone; the unknown is
+// the population coming back out of the wall, o = OPP[i]. It is rebuilt
+// from the post-collision field f* (fSnapshot, taken in stream()):
+//   q <  1/2: f_o(x) = 2q f*_i(x) + (1 - 2q) f*_i(x - c_i)
+//   q >= 1/2: f_o(x) = f*_i(x) / (2q) + (1 - 1/(2q)) f*_o(x)
+// If x - c_i is outside the domain or solid, f*_i(x) is used instead.
+// No force accumulation is performed here.
 // ---------------------------------------------------------
 function applyBFL(sim) {
-  const { NX, NY, Q, f, fSnapshot, linkMask, linkQ, fluidSurfaceList } = sim;
+  const { NX, NY, Q, f, fSnapshot, linkMask, linkQ, fluidSurfaceList, solid } = sim;
 
-  if (!fluidSurfaceList || !linkMask || !linkQ) return;
-
-  // Snapshot post-stream field so BFL reconstruction uses a
-  // consistent source state.
-  fSnapshot.set(f);
+  if (!fluidSurfaceList || !linkMask || !linkQ || !fSnapshot) return;
 
   for (let k = 0; k < fluidSurfaceList.length; k++) {
     const n = fluidSurfaceList[k];
@@ -92,38 +99,21 @@ function applyBFL(sim) {
       if (!linkMask[off]) continue;
 
       const q = linkQ[off];
-      const opp = OPP[i];
-      const fOppHere = fSnapshot[baseN + opp];
+      const o = OPP[i];
+      const fiHere = fSnapshot[off];
 
-      // Halfway bounce-back
-      if (Math.abs(q - 0.5) < 1e-6) {
-        f[off] = fOppHere;
-
-      // Wall closer to fluid node
-      } else if (q < 0.5) {
+      if (q < 0.5) {
         const xb = x - CX[i];
         const yb = y - CY[i];
-
-        const fOppBehind =
-          (xb >= 0 && xb < NX && yb >= 0 && yb < NY)
-            ? fSnapshot[(yb * NX + xb) * Q + opp]
-            : fOppHere;
-
-        const inv1p2q = 1.0 / (1.0 + 2.0 * q);
-        f[off] = inv1p2q * fOppHere + (2.0 * q * inv1p2q) * fOppBehind;
-
-      // Wall farther from fluid node
+        let fiBehind = fiHere;
+        if (xb >= 0 && xb < NX && yb >= 0 && yb < NY) {
+          const nb = yb * NX + xb;
+          if (!solid[nb]) fiBehind = fSnapshot[nb * Q + i];
+        }
+        f[baseN + o] = 2.0 * q * fiHere + (1.0 - 2.0 * q) * fiBehind;
       } else {
-        const xa = x + CX[i];
-        const ya = y + CY[i];
-
-        const fOppAhead =
-          (xa >= 0 && xa < NX && ya >= 0 && ya < NY)
-            ? fSnapshot[(ya * NX + xa) * Q + opp]
-            : fOppHere;
-
         const inv2q = 1.0 / (2.0 * q);
-        f[off] = inv2q * fOppHere + (1.0 - inv2q) * fOppAhead;
+        f[baseN + o] = inv2q * fiHere + (1.0 - inv2q) * fSnapshot[baseN + o];
       }
     }
   }
